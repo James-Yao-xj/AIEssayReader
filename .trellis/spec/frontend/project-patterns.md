@@ -112,12 +112,14 @@ createProvider({baseUrl, apiKey, model, temperature}) -> {
 system = GLOBAL_STYLE + "\n---\n" + 论文全文 + "\n---\n" + 任务模板
 ```
 
+GLOBAL_STYLE 始终前置，即使用户自定义了任务模板也不会受影响。
+
 ### 提示词分层
 
 ```js
-// prompts.js
+// prompts.js — 内置默认模板（始终存在，fallback 用）
 export const GLOBAL_STYLE = "…";  // 平台级，用户不可改。含慎用比喻 + 术语双重解释
-export const SUMMARIZE = "…";     // 任务级（可后期开放用户自定义）
+export const SUMMARIZE = "…";     // 任务级默认模板
 export const EXPLAIN_CONCEPTS = "…";
 export const CRITIQUE = "…";
 export const CHAT = "…";
@@ -125,12 +127,61 @@ export const CHAT = "…";
 
 GLOBAL_STYLE 必须包含：① 非必要不用比喻 / 用时考量是否恰当/误导；② 术语解释同时给出官方定义 + 通俗解释。
 
+### 用户自定义模板（2026-07-20 已实现）
+
+用户可在设置面板"提示词模板"标签页中编辑 4 个任务模板。数据流：
+
+```
+settings.js (textarea 编辑)
+  → saveSettings() → localStorage (aie:settings.promptSummarize 等)
+  → loadSettings() → store.settings.promptSummarize 等
+  → client.js getPromptTemplates() → {summarize, explainConcepts, critique, chat}
+  → context.js assemble({templates}) → taskTemplate = custom || built-in fallback
+```
+
+**关键约定：**
+
+1. **fallback 链**：`context.js` 中的 `assemble()` 按三层优先级选择模板：
+   ```
+   settings.promptXxx (非空非空白) → prompts.js 内置默认模板 → 空串
+   ```
+   实现：`typeof raw === 'string' && raw.trim() ? raw.trim() : TASK_TEMPLATES[task] || ''`
+
+2. **默认值来源**：`defaults.js` 中 `DEFAULT_SETTINGS.promptSummarize` 等字段 import 自 `prompts.js`，保证首次使用/重置后就是内置模板。
+
+3. **持久化**：`storage.js` 的 `pickKnownFields()` 识别 4 个 `prompt*` 字段（string 类型）；旧数据缺失字段由 `loadSettings()` 中的 `...DEFAULT_SETTINGS` spread 补齐。
+
+4. **"恢复默认"按钮**：settings.js 中从 `prompts.js` import `DEFAULT_TEMPLATES` 映射，点击后用内置模板填充对应 textarea。
+
+5. **空白处理**：保存时 `.trim()` 后再存；空文本/纯空白 → 存为 `""` → `getPromptTemplates()` 中 falsy → `assemble()` 回退到内置默认。
+
+6. **GLOBAL_STYLE 永远不可编辑**：设置面板"提示词模板"tab 顶部仅展示一句声明；`buildSystem()` 始终 `parts.push(GLOBAL_STYLE)` 在最前面。
+
+### Settings 字段（更新后）
+
+```js
+// store.settings 新增 4 个字段
+{
+  baseUrl, apiKey, model, temperature,  // 原有
+  promptSummarize,                       // 用户自定义"综述"模板（空串 = 用内置默认）
+  promptExplainConcepts,                 // 用户自定义"概念解释"模板
+  promptCritique,                        // 用户自定义"批判质疑"模板
+  promptChat,                            // 用户自定义"对话"模板
+}
+```
+
 ### 滑窗规则（context.js）
 
 - `summarize/explainConcepts/critique`：只发 `[system, 单条user触发指令]`，不走 messages 历史
 - `chat`：system + 最近 `recentN*2` 条消息（user/assistant 成对），避开 assistant 孤儿
 - 字符预算：`MAX_TOTAL_CHARS=100k`，超预算继续从最旧丢，始终保留 system
 - 新建任务不要改装配顺序；自定义提示词走任务模板层，不碰 GLOBAL_STYLE
+
+### 错误做法
+
+- ❌ 直接修改 `prompts.js` 中的模板来"自定义"（应通过设置面板编辑）
+- ❌ 用户自定义模板中尝试覆盖 GLOBAL_STYLE 的规则（GLOBAL_STYLE 始终前置，用户改不了）
+- ❌ 保存纯空白提示词不 trim（会导致 `"   "` 被当作有效自定义模板发送给 AI）
 
 ---
 

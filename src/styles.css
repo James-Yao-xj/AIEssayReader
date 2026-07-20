@@ -114,8 +114,8 @@ body {
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  width: 480px;
-  max-width: 92vw;
+  width: 680px;
+  max-width: 94vw;
   max-height: 88vh;
   overflow: auto;
 }
@@ -142,6 +142,47 @@ body {
 .settings-modal__close:hover {
   color: #1f2328;
 }
+
+/* ---- 设置面板标签栏 ---- */
+.settings-modal__tabs {
+  display: flex;
+  border-bottom: 1px solid #e3e6eb;
+  background: #fafbfc;
+}
+
+.settings-modal__tab {
+  flex: 1 1 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #6e7681;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.settings-modal__tab:hover {
+  color: #1f2328;
+}
+
+.settings-modal__tab--active {
+  color: #0d6efd;
+  border-bottom-color: #0d6efd;
+  font-weight: 600;
+}
+
+/* ---- 设置面板标签内容区 ---- */
+.settings-modal__tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-modal__tab-content[hidden] {
+  display: none;
+}
+
 .settings-modal__form {
   padding: 16px;
   display: flex;
@@ -171,6 +212,55 @@ body {
   outline: 2px solid #0d6efd33;
   border-color: #0d6efd;
 }
+
+.settings-field textarea {
+  padding: 8px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  line-height: 1.5;
+  background: #ffffff;
+  color: #1f2328;
+  resize: vertical;
+  min-height: 160px;
+}
+
+.settings-field textarea:focus {
+  outline: 2px solid #0d6efd33;
+  border-color: #0d6efd;
+}
+
+.settings-field__reset {
+  align-self: flex-end;
+  background: transparent;
+  border: 1px solid #d0d7de;
+  color: #6e7681;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.settings-field__reset:hover {
+  color: #1f2328;
+  background: #f3f4f6;
+  border-color: #b0b7c0;
+}
+
+.settings-field__global-notice {
+  font-size: 12px;
+  color: #6e7681;
+  background: #f0f2f5;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #0d6efd;
+  margin: 0;
+  line-height: 1.5;
+}
+
 .settings-field__hint {
   font-size: 11px;
   color: #6e7681;
@@ -768,5 +858,15 @@ body {
 
   .pane--pdf .pane__scroll {
     padding: 12px;
+  }
+
+  .settings-modal__panel {
+    width: 480px;
+  }
+}
+
+@media (max-width: 540px) {
+  .settings-modal__panel {
+    width: 96vw;
   }
 }

@@ -73,5 +73,10 @@ function pickKnownFields(obj) {
   if (typeof obj.temperature === 'number' && Number.isFinite(obj.temperature)) {
     out.temperature = obj.temperature;
   }
+  // 提示词模板（允许空串表示"使用内置默认"）
+  if (typeof obj.promptSummarize === 'string') out.promptSummarize = obj.promptSummarize;
+  if (typeof obj.promptExplainConcepts === 'string') out.promptExplainConcepts = obj.promptExplainConcepts;
+  if (typeof obj.promptCritique === 'string') out.promptCritique = obj.promptCritique;
+  if (typeof obj.promptChat === 'string') out.promptChat = obj.promptChat;
   return out;
 }

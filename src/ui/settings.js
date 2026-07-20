@@ -1,17 +1,35 @@
 /* =========================================================
  * src/ui/settings.js
  *
- * 设置面板（modal）。
- * - 字段：Base URL / API Key（password，不回显明文）/ 模型 / 温度
+ * 设置面板（modal），双标签页结构：
+ *   Tab 1 "基本设置" — Base URL / API Key / 模型 / 温度
+ *   Tab 2 "提示词模板" — 4 个可编辑任务提示词 textarea
+ *
  * - 保存 → store.setState({settings}) + storage.saveSettings()
  * - 打开/关闭：openSettings() / closeSettings()；Esc、点遮罩、点取消都可关闭
  * - API Key 已配置时占位提示"已配置（留空则不修改）"，绝不在 input 里回填明文
+ * - 提示词模板：用户自定义优先，无自定义时用 prompts.js 默认值填充
+ * - 每个 textarea 可"恢复默认"（从 prompts.js 内置模板回填）
  *
  * 暴露：initSettings()（创建 DOM、绑定事件）、openSettings()、closeSettings()
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
 import { saveSettings } from '../config/storage.js';
+import {
+  SUMMARIZE,
+  EXPLAIN_CONCEPTS,
+  CRITIQUE,
+  CHAT,
+} from '../ai/prompts.js';
+
+/** 默认模板映射，用于"恢复默认"按钮和 textarea 初始值 */
+const DEFAULT_TEMPLATES = /** @type {const} */ ({
+  promptSummarize: SUMMARIZE,
+  promptExplainConcepts: EXPLAIN_CONCEPTS,
+  promptCritique: CRITIQUE,
+  promptChat: CHAT,
+});
 
 /** @type {HTMLDivElement | null} */
 let modalEl = null;
@@ -31,31 +49,68 @@ export function initSettings() {
     <div class="settings-modal__panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="settings-modal__header">
         <h2 id="settings-title">设置</h2>
-        <button type="button" class="settings-modal__close" data-close aria-label="关闭设置">×</button>
+        <button type="button" class="settings-modal__close" data-close aria-label="关闭设置">&times;</button>
       </div>
+
+      <div class="settings-modal__tabs">
+        <button type="button" class="settings-modal__tab settings-modal__tab--active" data-tab="basic">基本设置</button>
+        <button type="button" class="settings-modal__tab" data-tab="prompts">提示词模板</button>
+      </div>
+
       <form class="settings-modal__form" id="settings-form" novalidate>
-        <label class="settings-field">
-          <span class="settings-field__label">Base URL</span>
-          <input type="url" name="baseUrl" placeholder="https://api.openai.com/v1" required />
-          <span class="settings-field__hint">OpenAI 兼容接口根地址。OpenAI: https://api.openai.com/v1；DeepSeek: https://api.deepseek.com/v1；OpenRouter: https://openrouter.ai/api/v1。末尾斜杠会自动去掉。</span>
-        </label>
 
-        <label class="settings-field">
-          <span class="settings-field__label">API Key</span>
-          <input type="password" name="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-          <span class="settings-field__hint">仅保存在本地浏览器 localStorage，刷新后仍保留。已配置时本框留空即不修改，绝不在界面回显明文。</span>
-        </label>
+        <div class="settings-modal__tab-content" data-tab-content="basic">
+          <label class="settings-field">
+            <span class="settings-field__label">Base URL</span>
+            <input type="url" name="baseUrl" placeholder="https://api.openai.com/v1" required />
+            <span class="settings-field__hint">OpenAI 兼容接口根地址。OpenAI: https://api.openai.com/v1；DeepSeek: https://api.deepseek.com/v1；OpenRouter: https://openrouter.ai/api/v1。末尾斜杠会自动去掉。</span>
+          </label>
 
-        <label class="settings-field">
-          <span class="settings-field__label">模型</span>
-          <input type="text" name="model" placeholder="gpt-4o-mini" required />
-        </label>
+          <label class="settings-field">
+            <span class="settings-field__label">API Key</span>
+            <input type="password" name="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+            <span class="settings-field__hint">仅保存在本地浏览器 localStorage，刷新后仍保留。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+          </label>
 
-        <label class="settings-field">
-          <span class="settings-field__label">温度</span>
-          <input type="number" name="temperature" min="0" max="2" step="0.1" value="0.3" required />
-          <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
-        </label>
+          <label class="settings-field">
+            <span class="settings-field__label">模型</span>
+            <input type="text" name="model" placeholder="gpt-4o-mini" required />
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-field__label">温度</span>
+            <input type="number" name="temperature" min="0" max="2" step="0.1" value="0.3" required />
+            <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
+          </label>
+        </div>
+
+        <div class="settings-modal__tab-content" data-tab-content="prompts" hidden>
+          <p class="settings-field__global-notice">平台级风格指令（慎用比喻、术语双重解释）为全局规则，不可修改。</p>
+
+          <label class="settings-field">
+            <span class="settings-field__label">论文综述提示词</span>
+            <textarea name="promptSummarize" rows="8" spellcheck="false"></textarea>
+            <button type="button" class="settings-field__reset" data-target="promptSummarize">恢复默认</button>
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-field__label">概念解释提示词</span>
+            <textarea name="promptExplainConcepts" rows="8" spellcheck="false"></textarea>
+            <button type="button" class="settings-field__reset" data-target="promptExplainConcepts">恢复默认</button>
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-field__label">批判质疑提示词</span>
+            <textarea name="promptCritique" rows="8" spellcheck="false"></textarea>
+            <button type="button" class="settings-field__reset" data-target="promptCritique">恢复默认</button>
+          </label>
+
+          <label class="settings-field">
+            <span class="settings-field__label">对话提示词</span>
+            <textarea name="promptChat" rows="8" spellcheck="false"></textarea>
+            <button type="button" class="settings-field__reset" data-target="promptChat">恢复默认</button>
+          </label>
+        </div>
 
         <div class="settings-modal__error" id="settings-error" hidden></div>
 
@@ -68,9 +123,37 @@ export function initSettings() {
   `;
   document.body.appendChild(modalEl);
 
+  // 遮罩 / 关闭按钮 / 取消按钮 → 关闭
   modalEl.addEventListener('click', (e) => {
     const target = /** @type {HTMLElement} */ (e.target);
     if (target.hasAttribute('data-close')) closeSettings();
+  });
+
+  // 标签页切换
+  const tabButtons = modalEl.querySelectorAll('.settings-modal__tab');
+  const tabContents = modalEl.querySelectorAll('.settings-modal__tab-content');
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.getAttribute('data-tab');
+      tabButtons.forEach((b) => b.classList.remove('settings-modal__tab--active'));
+      btn.classList.add('settings-modal__tab--active');
+      tabContents.forEach((c) => {
+        c.hidden = c.getAttribute('data-tab-content') !== tabName;
+      });
+    });
+  });
+
+  // "恢复默认"按钮（事件委托）
+  modalEl.addEventListener('click', (e) => {
+    const resetBtn = /** @type {HTMLElement} */ (e.target).closest('.settings-field__reset');
+    if (!resetBtn) return;
+    const targetName = resetBtn.getAttribute('data-target');
+    if (!targetName || !formEl) return;
+    const textarea = formEl.querySelector(`textarea[name="${targetName}"]`);
+    const defaultValue = DEFAULT_TEMPLATES[/** @type {keyof typeof DEFAULT_TEMPLATES} */ (targetName)];
+    if (textarea instanceof HTMLTextAreaElement && defaultValue) {
+      textarea.value = defaultValue;
+    }
   });
 
   formEl = /** @type {HTMLFormElement} */ (
@@ -89,11 +172,14 @@ export function initSettings() {
 /**
  * 打开设置面板。会用当前 store.settings 初始化各字段；
  * apiKey 永远不回填明文（已配置时占位提示"已配置（留空则不修改）"）。
+ * 提示词优先使用用户自定义值，无自定义时用 prompts.js 默认值。
  */
 export function openSettings() {
   if (!modalEl) initSettings();
   syncFormFromStore();
   showError('');
+  // 重置到第一个 tab
+  resetToFirstTab();
   modalEl.hidden = false;
   // 自动聚焦第一个空字段
   setTimeout(() => {
@@ -108,7 +194,10 @@ export function closeSettings() {
 }
 
 /**
- * 把当前 store.settings 同步到表单（apiKey 永远置空，靠 placeholder 提示）。
+ * 把当前 store.settings 同步到表单。
+ * - 普通字段从 settings 读取
+ * - apiKey 永远置空，靠 placeholder 提示
+ * - 提示词 textarea：用户自定义值优先，否则用 prompts.js 默认值
  */
 function syncFormFromStore() {
   if (!formEl) return;
@@ -116,6 +205,7 @@ function syncFormFromStore() {
   setFieldValue('baseUrl', settings.baseUrl || '');
   setFieldValue('model', settings.model || '');
   setFieldValue('temperature', String(settings.temperature ?? 0.3));
+
   // apiKey：永不回显明文
   const apiKeyInput = /** @type {HTMLInputElement} */ (
     formEl.elements.namedItem('apiKey')
@@ -124,6 +214,12 @@ function syncFormFromStore() {
   apiKeyInput.placeholder = settings.apiKey
     ? '已配置（留空则不修改）'
     : 'sk-...';
+
+  // 提示词模板：自定义优先，无自定义则用默认值填充
+  setFieldValue('promptSummarize', settings.promptSummarize || DEFAULT_TEMPLATES.promptSummarize);
+  setFieldValue('promptExplainConcepts', settings.promptExplainConcepts || DEFAULT_TEMPLATES.promptExplainConcepts);
+  setFieldValue('promptCritique', settings.promptCritique || DEFAULT_TEMPLATES.promptCritique);
+  setFieldValue('promptChat', settings.promptChat || DEFAULT_TEMPLATES.promptChat);
 }
 
 /**
@@ -133,7 +229,7 @@ function syncFormFromStore() {
 function setFieldValue(name, value) {
   if (!formEl) return;
   const el = formEl.elements.namedItem(name);
-  if (el instanceof HTMLInputElement) el.value = value;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.value = value;
 }
 
 /**
@@ -152,6 +248,20 @@ function showError(msg) {
   }
 }
 
+/** 重置标签页到第一个（基本设置）。 */
+function resetToFirstTab() {
+  if (!modalEl) return;
+  const tabButtons = modalEl.querySelectorAll('.settings-modal__tab');
+  const tabContents = modalEl.querySelectorAll('.settings-modal__tab-content');
+  tabButtons.forEach((b) => b.classList.remove('settings-modal__tab--active'));
+  tabContents.forEach((c) => { c.hidden = true; });
+
+  const firstTab = modalEl.querySelector('.settings-modal__tab[data-tab="basic"]');
+  const firstContent = modalEl.querySelector('.settings-modal__tab-content[data-tab-content="basic"]');
+  if (firstTab instanceof HTMLElement) firstTab.classList.add('settings-modal__tab--active');
+  if (firstContent instanceof HTMLElement) firstContent.hidden = false;
+}
+
 /** 校验 + 收集 + 保存。 */
 async function save() {
   if (!formEl) return;
@@ -160,6 +270,12 @@ async function save() {
   const model = String(fd.get('model') || '').trim();
   const temperatureRaw = String(fd.get('temperature') || '').trim();
   const apiKeyRaw = String(fd.get('apiKey') || '');
+
+  // 提示词模板：trim 后保存；纯空白视为"使用内置默认"
+  const promptSummarize = String(fd.get('promptSummarize') || '').trim();
+  const promptExplainConcepts = String(fd.get('promptExplainConcepts') || '').trim();
+  const promptCritique = String(fd.get('promptCritique') || '').trim();
+  const promptChat = String(fd.get('promptChat') || '').trim();
 
   if (!baseUrl) {
     showError('请填写 Base URL。');
@@ -180,7 +296,16 @@ async function save() {
   const apiKey = apiKeyRaw.trim() ? apiKeyRaw.trim() : current.apiKey;
 
   /** @type {import('../config/defaults.js').Settings} */
-  const newSettings = { baseUrl, apiKey, model, temperature };
+  const newSettings = {
+    baseUrl,
+    apiKey,
+    model,
+    temperature,
+    promptSummarize,
+    promptExplainConcepts,
+    promptCritique,
+    promptChat,
+  };
   const ok = saveSettings(newSettings);
   if (!ok) {
     showError('保存失败：localStorage 写入异常（可能是隐私模式或配额超限）。');
