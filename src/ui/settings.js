@@ -22,6 +22,7 @@ import {
   CRITIQUE,
   CHAT,
 } from '../ai/prompts.js';
+import { renderMarkdown } from './render.js';
 
 /** 默认模板映射，用于"恢复默认"按钮和 textarea 初始值 */
 const DEFAULT_TEMPLATES = /** @type {const} */ ({
@@ -84,32 +85,64 @@ export function initSettings() {
           </label>
         </div>
 
-        <div class="settings-modal__tab-content" data-tab-content="prompts" hidden>
-          <p class="settings-field__global-notice">平台级风格指令（慎用比喻、术语双重解释）为全局规则，不可修改。</p>
+        <div class="settings-modal__tab-content settings-modal__tab-content--prompts" data-tab-content="prompts" hidden>
+          <p class="settings-field__global-notice">平台级风格指令（慎用比喻、术语双重解释）为全局规则，不可修改。下方左侧编辑提示词模板，右侧实时预览渲染效果。</p>
 
-          <label class="settings-field">
+          <div class="settings-field settings-field--prompt">
             <span class="settings-field__label">论文综述提示词</span>
-            <textarea name="promptSummarize" rows="8" spellcheck="false"></textarea>
-            <button type="button" class="settings-field__reset" data-target="promptSummarize">恢复默认</button>
-          </label>
+            <div class="settings-field__prompt-row">
+              <div class="settings-field__editor">
+                <textarea name="promptSummarize" rows="12" spellcheck="false" data-prompt-textarea></textarea>
+                <button type="button" class="settings-field__reset" data-target="promptSummarize">恢复默认</button>
+              </div>
+              <div class="settings-field__preview">
+                <div class="settings-field__preview-head">预览</div>
+                <div class="settings-field__preview-content md-body" data-preview="promptSummarize"></div>
+              </div>
+            </div>
+          </div>
 
-          <label class="settings-field">
+          <div class="settings-field settings-field--prompt">
             <span class="settings-field__label">概念解释提示词</span>
-            <textarea name="promptExplainConcepts" rows="8" spellcheck="false"></textarea>
-            <button type="button" class="settings-field__reset" data-target="promptExplainConcepts">恢复默认</button>
-          </label>
+            <div class="settings-field__prompt-row">
+              <div class="settings-field__editor">
+                <textarea name="promptExplainConcepts" rows="12" spellcheck="false" data-prompt-textarea></textarea>
+                <button type="button" class="settings-field__reset" data-target="promptExplainConcepts">恢复默认</button>
+              </div>
+              <div class="settings-field__preview">
+                <div class="settings-field__preview-head">预览</div>
+                <div class="settings-field__preview-content md-body" data-preview="promptExplainConcepts"></div>
+              </div>
+            </div>
+          </div>
 
-          <label class="settings-field">
+          <div class="settings-field settings-field--prompt">
             <span class="settings-field__label">批判质疑提示词</span>
-            <textarea name="promptCritique" rows="8" spellcheck="false"></textarea>
-            <button type="button" class="settings-field__reset" data-target="promptCritique">恢复默认</button>
-          </label>
+            <div class="settings-field__prompt-row">
+              <div class="settings-field__editor">
+                <textarea name="promptCritique" rows="12" spellcheck="false" data-prompt-textarea></textarea>
+                <button type="button" class="settings-field__reset" data-target="promptCritique">恢复默认</button>
+              </div>
+              <div class="settings-field__preview">
+                <div class="settings-field__preview-head">预览</div>
+                <div class="settings-field__preview-content md-body" data-preview="promptCritique"></div>
+              </div>
+            </div>
+          </div>
 
-          <label class="settings-field">
+          <div class="settings-field settings-field--prompt">
             <span class="settings-field__label">对话提示词</span>
-            <textarea name="promptChat" rows="8" spellcheck="false"></textarea>
-            <button type="button" class="settings-field__reset" data-target="promptChat">恢复默认</button>
-          </label>
+            <div class="settings-field__prompt-row">
+              <div class="settings-field__editor">
+                <textarea name="promptChat" rows="12" spellcheck="false" data-prompt-textarea></textarea>
+                <button type="button" class="settings-field__reset" data-target="promptChat">恢复默认</button>
+              </div>
+              <div class="settings-field__preview">
+                <div class="settings-field__preview-head">预览</div>
+                <div class="settings-field__preview-content md-body" data-preview="promptChat"></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="settings-modal__error" id="settings-error" hidden></div>
@@ -153,8 +186,28 @@ export function initSettings() {
     const defaultValue = DEFAULT_TEMPLATES[/** @type {keyof typeof DEFAULT_TEMPLATES} */ (targetName)];
     if (textarea instanceof HTMLTextAreaElement && defaultValue) {
       textarea.value = defaultValue;
+      // 恢复默认后更新预览
+      updatePreview(targetName, defaultValue);
     }
   });
+
+  // 提示词 textarea 实时预览（防抖 300ms）
+  /** @type {Record<string, number>} */
+  const previewTimers = {};
+  const promptTabContent = modalEl.querySelector('[data-tab-content="prompts"]');
+  if (promptTabContent) {
+    promptTabContent.addEventListener('input', (e) => {
+      const textarea = /** @type {HTMLElement} */ (e.target).closest('textarea[data-prompt-textarea]');
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const name = textarea.getAttribute('name');
+      if (!name) return;
+      // 防抖
+      if (previewTimers[name]) clearTimeout(previewTimers[name]);
+      previewTimers[name] = window.setTimeout(() => {
+        updatePreview(name, textarea.value);
+      }, 300);
+    });
+  }
 
   formEl = /** @type {HTMLFormElement} */ (
     modalEl.querySelector('#settings-form')
@@ -177,6 +230,7 @@ export function initSettings() {
 export function openSettings() {
   if (!modalEl) initSettings();
   syncFormFromStore();
+  refreshAllPreviews();
   showError('');
   // 重置到第一个 tab
   resetToFirstTab();
@@ -246,6 +300,32 @@ function showError(msg) {
     errEl.textContent = '';
     errEl.hidden = true;
   }
+}
+
+/**
+ * 更新指定提示词的实时预览。
+ * @param {string} name textarea 的 name 属性
+ * @param {string} markdown 原始 markdown 文本
+ */
+function updatePreview(name, markdown) {
+  if (!modalEl) return;
+  const previewEl = modalEl.querySelector(`[data-preview="${name}"]`);
+  if (previewEl instanceof HTMLElement) {
+    renderMarkdown(previewEl, markdown);
+  }
+}
+
+/**
+ * 刷新所有提示词的预览（在 openSettings 时调用）。
+ */
+function refreshAllPreviews() {
+  if (!formEl) return;
+  const textareas = formEl.querySelectorAll('textarea[data-prompt-textarea]');
+  textareas.forEach((ta) => {
+    if (ta instanceof HTMLTextAreaElement) {
+      updatePreview(ta.name, ta.value);
+    }
+  });
 }
 
 /** 重置标签页到第一个（基本设置）。 */

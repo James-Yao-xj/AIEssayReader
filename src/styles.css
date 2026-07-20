@@ -114,9 +114,9 @@ body {
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  width: 680px;
-  max-width: 94vw;
-  max-height: 88vh;
+  width: 960px;
+  max-width: 96vw;
+  max-height: 90vh;
   overflow: auto;
 }
 .settings-modal__header {
@@ -259,6 +259,76 @@ body {
   border-left: 3px solid #0d6efd;
   margin: 0;
   line-height: 1.5;
+}
+
+/* ---- 提示词编辑 + 预览双栏 ---- */
+.settings-field--prompt {
+  gap: 6px;
+}
+
+.settings-field__prompt-row {
+  display: flex;
+  gap: 12px;
+  min-height: 240px;
+}
+
+.settings-field__editor {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-field__editor textarea {
+  flex: 1 1 auto;
+  resize: vertical;
+  min-height: 240px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-field__preview {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #fafbfc;
+  overflow: hidden;
+}
+
+.settings-field__preview-head {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6e7681;
+  padding: 5px 10px;
+  background: #f0f2f5;
+  border-bottom: 1px solid #e3e6eb;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settings-field__preview-content {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* 预览滚动条美化 */
+.settings-field__preview-content::-webkit-scrollbar {
+  width: 6px;
+}
+.settings-field__preview-content::-webkit-scrollbar-thumb {
+  background: #d0d7de;
+  border-radius: 3px;
+}
+.settings-field__preview-content::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .settings-field__hint {
@@ -881,12 +951,25 @@ body {
   }
 
   .settings-modal__panel {
-    width: 480px;
+    width: 100%;
+  }
+
+  .settings-field__prompt-row {
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .settings-field__editor textarea {
+    min-height: 160px;
+  }
+
+  .settings-field__preview {
+    min-height: 180px;
   }
 }
 
 @media (max-width: 540px) {
   .settings-modal__panel {
-    width: 96vw;
+    width: 98vw;
   }
 }
