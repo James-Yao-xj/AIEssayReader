@@ -38,3 +38,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 三栏拖拽调整宽度
+
+**Date**: 2026-07-20
+**Task**: 三栏拖拽调整宽度
+**Branch**: `fix/betterPrompt`
+
+### Summary
+
+在三栏之间插入可拖拽分隔条（.pane-gutter），支持鼠标拖拽调整相邻栏宽度。放弃 flex 比例改用 JS 百分比宽度控制，最小宽度约束 200px/15%，双击重置，比例持久化 localStorage，窄屏自动隐藏。新建 paneResize.js，修改 storage.js/index.html/main.js/styles.css。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b64198` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
