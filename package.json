@@ -1,0 +1,20 @@
+{
+  "name": "ai-essay-reader",
+  "version": "0.1.0",
+  "description": "拖入 PDF，AI 帮你读论文：总结、解释关键概念、提出质疑",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "katex": "^0.16.0",
+    "marked": "^12.0.2",
+    "pdfjs-dist": "^4.4.0"
+  },
+  "devDependencies": {
+    "vite": "^5.3.4",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}

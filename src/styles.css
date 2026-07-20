@@ -1,0 +1,772 @@
+/* =========================================================
+   AI 论文阅读插件 · 全局样式
+   - 三栏布局（flex）：左 PDF 原版 / 中 提取文本 / 右 AI 面板
+   - 窄屏堆叠（响应式）
+   - 本文件仅做骨架样式，AI 面板、设置面板等细节样式后续 Step 补充
+   ========================================================= */
+
+/* ---------- 重置 / 基础 ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #f5f6f8;
+  color: #1f2328;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- 顶部条 ---------- */
+.app-header {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e3e6eb;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.app-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.app-header__hint {
+  color: #6e7681;
+  font-size: 12px;
+  flex: 1 1 auto;
+}
+
+/* 未填 Key 提示徽标 */
+.app-header__key-hint {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #9a6700;
+  background: #fff8c5;
+  padding: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid #eac54f;
+  line-height: 1.4;
+}
+.app-header__key-hint[hidden] {
+  display: none;
+}
+
+/* 设置按钮 */
+.app-header__btn {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid #d0d7de;
+  color: #1f2328;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.app-header__btn:hover {
+  background: #f0f2f5;
+}
+.app-header__btn:focus-visible {
+  outline: 2px solid #0d6efd55;
+  outline-offset: 1px;
+}
+
+/* ---------- 设置 modal ---------- */
+.settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-modal[hidden] {
+  display: none;
+}
+.settings-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+.settings-modal__panel {
+  position: relative;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  width: 480px;
+  max-width: 92vw;
+  max-height: 88vh;
+  overflow: auto;
+}
+.settings-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e3e6eb;
+}
+.settings-modal__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.settings-modal__close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6e7681;
+  padding: 0 4px;
+}
+.settings-modal__close:hover {
+  color: #1f2328;
+}
+.settings-modal__form {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-field__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2328;
+}
+.settings-field input {
+  padding: 7px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #ffffff;
+  color: #1f2328;
+}
+.settings-field input:focus {
+  outline: 2px solid #0d6efd33;
+  border-color: #0d6efd;
+}
+.settings-field__hint {
+  font-size: 11px;
+  color: #6e7681;
+  line-height: 1.5;
+}
+.settings-modal__error {
+  font-size: 12px;
+  color: #cf222e;
+  background: #ffebe9;
+  border: 1px solid #ffcecb;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+.settings-modal__error[hidden] {
+  display: none;
+}
+.settings-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+}
+.settings-modal__actions button {
+  padding: 7px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.settings-modal__actions button.primary {
+  background: #0d6efd;
+  color: #ffffff;
+  border: 1px solid #0d6efd;
+}
+.settings-modal__actions button.primary:hover {
+  background: #0b5ed7;
+}
+.settings-modal__actions button:not(.primary) {
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  color: #1f2328;
+}
+.settings-modal__actions button:not(.primary):hover {
+  background: #f0f2f5;
+}
+
+/* ---------- 三栏主体 ---------- */
+.app-main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.pane {
+  flex: 1 1 0;
+  min-width: 0;
+  background: #ffffff;
+  border-right: 1px solid #e3e6eb;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.pane:last-child {
+  border-right: none;
+}
+
+/* 各栏宽度比例：PDF 略宽，AI 略宽，文本适中 */
+.pane--pdf {
+  flex: 1.2 1 0;
+  background: #525659; /* PDF 原版背景，模拟阅读器深底 */
+}
+
+.pane--text {
+  flex: 1 1 0;
+}
+
+.pane--ai {
+  flex: 1.1 1 0;
+  background: #fafbfc;
+}
+
+/* ---------- 面板空态占位 ---------- */
+.pane__empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #6e7681;
+}
+
+.pane--pdf .pane__empty {
+  color: #c9cdd2;
+}
+
+.pane__empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: inherit;
+}
+
+.pane__empty-desc {
+  font-size: 12px;
+  max-width: 240px;
+  line-height: 1.6;
+}
+
+/* ---------- 滚动区（PDF canvas / 文本） ---------- */
+.pane__scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* PDF 原版：canvas 居中、纵向排列、留白 */
+.pane--pdf .pane__scroll {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.pane--pdf canvas {
+  display: block;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  max-width: 100%;
+  height: auto;
+}
+
+/* 中栏文本：按页分段 */
+.pane__scroll--text {
+  padding: 16px 20px;
+  user-select: text;
+}
+
+.text-page {
+  margin-bottom: 24px;
+}
+
+/* 中栏顶部：论文元信息（标题/作者），临时样式，Step 5 重构 */
+.text-meta {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2328;
+  padding: 6px 10px;
+  margin-bottom: 16px;
+  background: #f0f2f5;
+  border-radius: 4px;
+  border-left: 3px solid #0d6efd;
+}
+
+.text-page__head {
+  font-size: 12px;
+  color: #6e7681;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed #e3e6eb;
+}
+
+.text-page__body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #1f2328;
+}
+
+/* ---------- 全局拖拽遮罩 ---------- */
+.dropzone {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 110, 253, 0.18);
+  border: 3px dashed #0d6efd;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* 必须显式覆盖 .dropzone 的 display:flex——同级特异性下 [hidden] 的 UA display:none 会被作者样式覆盖 */
+.dropzone[hidden] {
+  display: none;
+}
+
+.dropzone__inner {
+  background: #ffffff;
+  padding: 24px 36px;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.dropzone__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0d6efd;
+  margin-bottom: 4px;
+}
+
+.dropzone__desc {
+  font-size: 12px;
+  color: #6e7681;
+}
+
+/* ---------- 中栏追问浮层按钮 ---------- */
+.text-ask-btn {
+  position: fixed;
+  z-index: 9998;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #0d6efd;
+  border: none;
+  border-radius: 6px;
+  box-shadow: 0 3px 12px rgba(13, 110, 253, 0.35);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.12s;
+}
+.text-ask-btn:hover {
+  background: #0b5ed7;
+}
+.text-ask-btn[hidden] {
+  display: none;
+}
+
+/* ---------- 底部状态条 ---------- */
+.status-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: rgba(33, 37, 41, 0.92);
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  z-index: 10000;
+  max-width: 80%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.status-bar--error {
+  background: rgba(197, 48, 48, 0.95);
+}
+
+.status-bar--success {
+  background: rgba(31, 134, 71, 0.95);
+}
+
+
+/* =========================================================
+   右栏 AI 面板
+   ========================================================= */
+.ai-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---- tab 栏 ---- */
+.ai-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  border-bottom: 1px solid #e3e6eb;
+  background: #fafbfc;
+}
+
+.ai-tab {
+  flex: 1 1 0;
+  padding: 10px 6px;
+  font-size: 13px;
+  color: #6e7681;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.ai-tab:hover {
+  color: #1f2328;
+}
+.ai-tab--active {
+  color: #0d6efd;
+  border-bottom-color: #0d6efd;
+  font-weight: 600;
+}
+
+/* ---- 内容区 ---- */
+.ai-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+}
+
+.ai-pane__section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 14px 16px;
+}
+
+.ai-pane__section[hidden] {
+  display: none;
+}
+
+.ai-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.ai-section__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ai-section__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ai-section__desc {
+  font-size: 12px;
+  color: #6e7681;
+  margin-bottom: 12px;
+}
+
+/* ---- 按钮 ---- */
+.ai-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.ai-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ai-btn--primary {
+  background: #0d6efd;
+  color: #ffffff;
+  border-color: #0d6efd;
+}
+.ai-btn--primary:hover:not(:disabled) {
+  background: #0b5ed7;
+}
+.ai-btn--ghost {
+  background: #ffffff;
+  color: #1f2328;
+  border-color: #d0d7de;
+}
+.ai-btn--ghost:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+/* ---- 错误提示 ---- */
+.ai-error {
+  font-size: 12px;
+  color: #c53030;
+  background: #fff0f0;
+  border: 1px solid #ffcccc;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.ai-error[hidden] {
+  display: none;
+}
+
+/* ---- 结果展示区 ---- */
+.ai-result {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ai-placeholder {
+  color: #8b949e;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+/* =========================================================
+   Markdown 排版（.md-body）
+   ========================================================= */
+.md-body {
+  word-break: break-word;
+}
+.md-body > *:first-child {
+  margin-top: 0;
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  margin: 1.1em 0 0.5em;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.md-body h1 {
+  font-size: 1.25em;
+}
+.md-body h2 {
+  font-size: 1.12em;
+  border-bottom: 1px solid #e3e6eb;
+  padding-bottom: 3px;
+}
+.md-body h3 {
+  font-size: 1.02em;
+}
+.md-body p {
+  margin: 0.5em 0;
+}
+.md-body ul,
+.md-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.6em;
+}
+.md-body li {
+  margin: 0.2em 0;
+}
+.md-body code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.88em;
+  background: #f0f2f5;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.md-body pre {
+  background: #1f2328;
+  color: #f0f3f6;
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow: auto;
+  margin: 0.6em 0;
+}
+.md-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: 0.85em;
+}
+.md-body blockquote {
+  margin: 0.6em 0;
+  padding: 2px 12px;
+  border-left: 3px solid #0d6efd;
+  background: #f6f8fa;
+  color: #424a53;
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.92em;
+  display: block;
+  overflow-x: auto;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid #d0d7de;
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.md-body th {
+  background: #f6f8fa;
+  font-weight: 600;
+}
+.md-body a {
+  color: #0d6efd;
+}
+
+/* ---- KaTeX 公式块 ---- */
+.katex-block,
+.md-body .katex-display {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+/* =========================================================
+   对话 tab
+   ========================================================= */
+.ai-pane__section--chat {
+  gap: 0;
+}
+
+.chat-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.chat-bubble {
+  max-width: 92%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.chat-bubble--user {
+  align-self: flex-end;
+  background: #0d6efd;
+  color: #ffffff;
+  border-bottom-right-radius: 3px;
+  white-space: pre-wrap;
+}
+
+.chat-bubble--assistant {
+  align-self: flex-start;
+  background: #f0f2f5;
+  color: #1f2328;
+  border-bottom-left-radius: 3px;
+}
+
+/* assistant 气泡在流式开始前为空，隐藏避免占位 */
+.chat-bubble--assistant:empty {
+  display: none;
+}
+
+.chat-composer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #e3e6eb;
+  margin-top: 8px;
+}
+
+.chat-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
+}
+
+.chat-composer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- 响应式：窄屏堆叠 ---------- */
+@media (max-width: 960px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-main {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .pane {
+    border-right: none;
+    border-bottom: 1px solid #e3e6eb;
+    min-height: 320px;
+    flex: 1 1 auto;
+  }
+
+  .pane--pdf .pane__scroll {
+    padding: 12px;
+  }
+}

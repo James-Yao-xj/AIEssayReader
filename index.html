@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 论文阅读插件</title>
+  </head>
+  <body>
+    <!-- 顶部条：标题 + 未填 Key 提示 + 设置按钮 -->
+    <header class="app-header">
+      <h1 class="app-title">AI 论文阅读插件</h1>
+      <div class="app-header__hint">拖入 PDF 即可开始 · 设置好后用总结/概念/质疑/对话</div>
+      <span class="app-header__key-hint" id="key-hint" hidden>未配置 API Key</span>
+      <button class="app-header__btn" id="btn-settings" type="button" title="打开设置" aria-label="打开设置">⚙ 设置</button>
+    </header>
+
+    <!-- 三栏布局：左 PDF 原版 / 中 提取文本 / 右 AI 面板 -->
+    <main class="app-main">
+      <!-- 左栏：PDF 原版渲染 -->
+      <section class="pane pane--pdf" id="pane-pdf" aria-label="PDF 原版">
+        <div class="pane__empty" data-empty>
+          <div class="pane__empty-title">左栏 · PDF 原版</div>
+          <div class="pane__empty-desc">拖入 PDF 后，这里渲染原版页面用于核对与查看图表/公式。</div>
+        </div>
+        <div class="pane__scroll" id="pdf-scroll" hidden>
+          <!-- renderPdf 把 canvas 逐页插入这里 -->
+        </div>
+      </section>
+
+      <!-- 中栏：提取的文本 -->
+      <section class="pane pane--text" id="pane-text" aria-label="提取文本">
+        <div class="pane__empty" data-empty>
+          <div class="pane__empty-title">中栏 · 提取文本</div>
+          <div class="pane__empty-desc">拖入 PDF 后，这里展示按页提取的文本，可选中复制（后续 Step 支持"追问"）。</div>
+        </div>
+        <div class="pane__scroll pane__scroll--text" id="text-scroll" hidden>
+          <!-- extractText 拼好的内容临时渲染到这里（Step 5 再做正式 textPane） -->
+        </div>
+      </section>
+
+      <!-- 右栏：AI 面板（后续 Step 实现总结/概念/质疑/对话） -->
+      <section class="pane pane--ai" id="pane-ai" aria-label="AI 面板">
+        <div class="pane__empty">
+          <div class="pane__empty-title">右栏 · AI 面板</div>
+          <div class="pane__empty-desc">后续 Step 接入：总结 / 解释关键概念 / 批判质疑 / 对话。</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 全局拖拽落区：覆盖整个窗口，拖入文件时显示遮罩 -->
+    <div class="dropzone" id="dropzone" hidden>
+      <div class="dropzone__inner">
+        <div class="dropzone__title">松开以加载 PDF</div>
+        <div class="dropzone__desc">仅支持 .pdf 文件</div>
+      </div>
+    </div>
+
+    <!-- 全局状态条：显示 loading / 错误 -->
+    <div class="status-bar" id="status-bar" hidden>
+      <span class="status-bar__text" id="status-text"></span>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
