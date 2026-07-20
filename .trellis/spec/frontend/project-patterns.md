@@ -112,12 +112,14 @@ createProvider({baseUrl, apiKey, model, temperature}) -> {
 system = GLOBAL_STYLE + "\n---\n" + 论文全文 + "\n---\n" + 任务模板
 ```
 
+GLOBAL_STYLE 始终前置，即使用户自定义了任务模板也不会受影响。
+
 ### 提示词分层
 
 ```js
-// prompts.js
+// prompts.js — 内置默认模板（始终存在，fallback 用）
 export const GLOBAL_STYLE = "…";  // 平台级，用户不可改。含慎用比喻 + 术语双重解释
-export const SUMMARIZE = "…";     // 任务级（可后期开放用户自定义）
+export const SUMMARIZE = "…";     // 任务级默认模板
 export const EXPLAIN_CONCEPTS = "…";
 export const CRITIQUE = "…";
 export const CHAT = "…";
@@ -125,12 +127,61 @@ export const CHAT = "…";
 
 GLOBAL_STYLE 必须包含：① 非必要不用比喻 / 用时考量是否恰当/误导；② 术语解释同时给出官方定义 + 通俗解释。
 
+### 用户自定义模板（2026-07-20 已实现）
+
+用户可在设置面板"提示词模板"标签页中编辑 4 个任务模板。数据流：
+
+```
+settings.js (textarea 编辑)
+  → saveSettings() → localStorage (aie:settings.promptSummarize 等)
+  → loadSettings() → store.settings.promptSummarize 等
+  → client.js getPromptTemplates() → {summarize, explainConcepts, critique, chat}
+  → context.js assemble({templates}) → taskTemplate = custom || built-in fallback
+```
+
+**关键约定：**
+
+1. **fallback 链**：`context.js` 中的 `assemble()` 按三层优先级选择模板：
+   ```
+   settings.promptXxx (非空非空白) → prompts.js 内置默认模板 → 空串
+   ```
+   实现：`typeof raw === 'string' && raw.trim() ? raw.trim() : TASK_TEMPLATES[task] || ''`
+
+2. **默认值来源**：`defaults.js` 中 `DEFAULT_SETTINGS.promptSummarize` 等字段 import 自 `prompts.js`，保证首次使用/重置后就是内置模板。
+
+3. **持久化**：`storage.js` 的 `pickKnownFields()` 识别 4 个 `prompt*` 字段（string 类型）；旧数据缺失字段由 `loadSettings()` 中的 `...DEFAULT_SETTINGS` spread 补齐。
+
+4. **"恢复默认"按钮**：settings.js 中从 `prompts.js` import `DEFAULT_TEMPLATES` 映射，点击后用内置模板填充对应 textarea。
+
+5. **空白处理**：保存时 `.trim()` 后再存；空文本/纯空白 → 存为 `""` → `getPromptTemplates()` 中 falsy → `assemble()` 回退到内置默认。
+
+6. **GLOBAL_STYLE 永远不可编辑**：设置面板"提示词模板"tab 顶部仅展示一句声明；`buildSystem()` 始终 `parts.push(GLOBAL_STYLE)` 在最前面。
+
+### Settings 字段（更新后）
+
+```js
+// store.settings 新增 4 个字段
+{
+  baseUrl, apiKey, model, temperature,  // 原有
+  promptSummarize,                       // 用户自定义"综述"模板（空串 = 用内置默认）
+  promptExplainConcepts,                 // 用户自定义"概念解释"模板
+  promptCritique,                        // 用户自定义"批判质疑"模板
+  promptChat,                            // 用户自定义"对话"模板
+}
+```
+
 ### 滑窗规则（context.js）
 
 - `summarize/explainConcepts/critique`：只发 `[system, 单条user触发指令]`，不走 messages 历史
 - `chat`：system + 最近 `recentN*2` 条消息（user/assistant 成对），避开 assistant 孤儿
 - 字符预算：`MAX_TOTAL_CHARS=100k`，超预算继续从最旧丢，始终保留 system
 - 新建任务不要改装配顺序；自定义提示词走任务模板层，不碰 GLOBAL_STYLE
+
+### 错误做法
+
+- ❌ 直接修改 `prompts.js` 中的模板来"自定义"（应通过设置面板编辑）
+- ❌ 用户自定义模板中尝试覆盖 GLOBAL_STYLE 的规则（GLOBAL_STYLE 始终前置，用户改不了）
+- ❌ 保存纯空白提示词不 trim（会导致 `"   "` 被当作有效自定义模板发送给 AI）
 
 ---
 
@@ -184,6 +235,67 @@ textPane（中栏选中追问）和 aiPane（对话 tab）通过 store.ui.quickA
 
 ---
 
+## 7. 三栏拖拽调整宽度（paneResize.js）
+
+### 宽度模型
+
+放弃 CSS flex 固定比例，改用 JS 控制的百分比宽度：
+
+```js
+// 默认比例（PDF/文本/AI），总和 ~99%，留 ~1% 给 gutter
+const DEFAULT_RATIOS = [36, 30, 33];
+```
+
+每个 `.pane` 设 `flex: 0 0 auto` + `style.width = 'xx%'`。两条 6px 的 `.pane-gutter` 占据剩余空间。
+
+### 拖拽事件流
+
+```
+mousedown on gutter (e.button === 0)
+  → 记录 startX、两侧 pane 当前 width%、container.clientWidth
+  → document 绑定 mousemove + mouseup
+  → body: userSelect=none, cursor=col-resize
+  → gutter 加 .pane-gutter--dragging
+
+mousemove
+  → deltaPct = (e.clientX - startX) / containerWidth * 100
+  → leftPct = leftStart + deltaPct; rightPct = rightStart - deltaPct
+  → 约束: both >= max(15%, 200px / containerWidth * 100)
+  → 约束后保持 total = leftStart + rightStart（另一边吸收差值）
+  → 更新两侧 pane.style.width
+
+mouseup
+  → 解绑 document 事件，恢复 body 样式，移除 dragging class
+  → savePaneRatios(ratios) 持久化到 localStorage
+```
+
+### 持久化
+
+```js
+// storage.js
+const RATIO_KEY = 'aie:pane-ratios';
+loadPaneRatios()   // → [36, 30, 33]（默认 fallback）
+savePaneRatios(ratios) // → boolean
+```
+
+与 `aie:settings` 分离，互不干扰。加载时验证：必须是长度为 3 的数组，每项为正有限数。
+
+### 响应式
+
+窄屏 `@media (max-width: 960px)`：
+- `.pane-gutter { display: none; }`
+- `.pane { width: 100% !important; flex: 1 1 auto; }`
+- JS 中 `mousedown` / `dblclick` 守卫 `window.innerWidth <= 960` 不响应
+
+### 错误做法
+
+- ❌ 用 flex 比例做拖拽目标（flex-basis 受内容影响，不准）
+- ❌ 事件绑在 gutter 自身上（鼠标快速移动会脱离元素）
+- ❌ 不 guard `e.button !== 0`（右键/中键误触发拖拽）
+- ❌ 拖拽中频繁读 `container.clientWidth`（窗口 resize 时不变，拖拽开始时读一次即可）
+
+---
+
 ## 7. 文件结构约定
 
 ```
@@ -206,6 +318,7 @@ src/
 │   ├── aiPane.js        右栏 AI 面板
 │   ├── render.js        Markdown + KaTeX 渲染
 │   ├── settings.js      设置面板 modal
+│   ├── paneResize.js    三栏拖拽调整宽度
 │   └── textPane.js      中栏文本 + 追问联动
 └── utils/
     └── errors.js        跨模块共享工具
@@ -222,7 +335,8 @@ src/
 - 单文件 `src/styles.css`，按注释分区（顶部条 / 三栏 / 面板 / 表单 / 响应式 / …）
 - Class naming：BEM 浅层（如 `.pane__scroll`、`.ai-tab--active`）
 - 主色：`#0d6efd`（蓝）、背景 `#f5f6f8`、边框 `#e3e6eb`
-- 三栏用 `flex: 1.2 / 1 / 1.1` 比例，`min-width: 0` 防止内容撑破
-- 窄屏 960px 断点 → `flex-direction: column` 堆叠
+- 三栏默认比例 36% / 30% / 33%，由 `paneResize.js` 初始化时设置 `style.width`；`flex: 0 0 auto` 防止内容撑破
+- 分隔条（`.pane-gutter`）：6px 宽，`col-resize` 光标，hover 变蓝（`#0d6efd`），拖拽中加深（`#0b5ed7`）
+- 窄屏 960px 断点 → `flex-direction: column` 堆叠，gutter 隐藏，pane 宽度重置
 - PDF 左栏背景 `#525659`（深色模拟阅读器）；AI 右栏 `#fafbfc`
 - KaTeX 公式块：`overflow-x: auto`（防长公式撑爆布局）

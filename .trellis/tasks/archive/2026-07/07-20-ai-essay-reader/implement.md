@@ -44,6 +44,7 @@
 
 ### Step 6 — 收尾
 - [x] README 写使用说明（含 file:// 限制、CORS 提示、API 配置指南、已知限制）。
+- [x] **提示词自定义（2026-07-20 新增）**：设置面板新增"提示词模板"标签页，用户可编辑 4 个任务模板（综述/概念/批判/对话），支持"恢复默认"。GLOBAL_STYLE 不可编辑。涉及：`defaults.js`、`storage.js`、`context.js`、`client.js`、`settings.js`、`styles.css`。
 - [ ] 全量回归验收清单（见 prd.md Acceptance Criteria）。
 - [ ] **验证 M6**：清空环境，按 README 从零走一遍。
 

@@ -27,6 +27,7 @@ import { loadSettings } from './config/storage.js';
 import { initSettings, openSettings } from './ui/settings.js';
 import { initAiPane } from './ui/aiPane.js';
 import { initTextPane, renderText } from './ui/textPane.js';
+import { initPaneResize } from './ui/paneResize.js';
 import { describeErr } from './utils/errors.js';
 
 // ---- DOM 引用 ----
@@ -321,6 +322,9 @@ initAiPane();
 
 // 1.6) 初始化中栏追问功能（text selection → 浮层"追问"按钮）
 initTextPane();
+
+// 1.7) 初始化三栏可拖拽调整宽度（分隔条 + 比例持久化）
+initPaneResize();
 
 // 2) 加载持久化设置写入 store
 setState({ settings: loadSettings() });

@@ -18,6 +18,23 @@ import { createProvider } from './openai.js';
 import { assemble } from './context.js';
 
 /**
+ * 从 store.settings 读取用户自定义提示词，构建与 context.assemble() 兼容的
+ * templates 映射。若用户未自定义某字段（空串/undefined），assemble() 会回退
+ * 到 prompts.js 内置默认模板。
+ *
+ * @returns {Partial<Record<'summarize' | 'explainConcepts' | 'critique' | 'chat', string>>}
+ */
+function getPromptTemplates() {
+  const { settings } = getState();
+  return {
+    summarize: settings.promptSummarize,
+    explainConcepts: settings.promptExplainConcepts,
+    critique: settings.promptCritique,
+    chat: settings.promptChat,
+  };
+}
+
+/**
  * 取 provider。每次调用前都重新读 store.settings，保证用户改完设置立即生效。
  * 同时做必要的前置校验，抛带语义的错。
  * @param {{ requirePaper?: boolean }} [opts]
@@ -58,7 +75,7 @@ function makeProvider(opts) {
 async function* runOneShot(task, signal) {
   const { paper } = getState();
   const provider = makeProvider({ requirePaper: true });
-  const messages = assemble({ task, paper, messages: [] });
+  const messages = assemble({ task, paper, messages: [], templates: getPromptTemplates() });
   yield* provider.chat(messages, { signal });
 }
 
@@ -120,6 +137,7 @@ export async function* chat(userText, signal) {
     task: 'chat',
     paper,
     messages: messagesWithUser,
+    templates: getPromptTemplates(),
   });
 
   let assistantText = '';

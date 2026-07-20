@@ -44,16 +44,22 @@ const TASK_TEMPLATES = {
 /**
  * 装配 OpenAI messages 数组。
  *
+ * 可通过 templates 参数传入自定义提示词（来自用户设置），为空/未传时回退到内置默认模板。
+ *
  * @param {{
  *   task: Task,
  *   paper?: { fullText?: string } | null,
  *   messages?: Array<{ role: 'user' | 'assistant', content: string }>,
  *   recentN?: number,
+ *   templates?: Partial<Record<Task, string>>,
  * }} args
  * @returns {Array<{ role: 'system' | 'user', content: string }>}
  */
-export function assemble({ task, paper, messages = [], recentN = 8 }) {
-  const taskTemplate = TASK_TEMPLATES[task] || '';
+export function assemble({ task, paper, messages = [], recentN = 8, templates }) {
+  // 自定义模板优先；仅空白视为"未提供"，回退到内置默认。
+  const raw = templates?.[task];
+  const taskTemplate =
+    typeof raw === 'string' && raw.trim() ? raw.trim() : (TASK_TEMPLATES[task] || '');
   const paperText = paper?.fullText || '';
 
   const systemContent = buildSystem({ paperText, taskTemplate });

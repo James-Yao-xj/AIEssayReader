@@ -114,8 +114,8 @@ body {
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  width: 480px;
-  max-width: 92vw;
+  width: 680px;
+  max-width: 94vw;
   max-height: 88vh;
   overflow: auto;
 }
@@ -142,6 +142,47 @@ body {
 .settings-modal__close:hover {
   color: #1f2328;
 }
+
+/* ---- 设置面板标签栏 ---- */
+.settings-modal__tabs {
+  display: flex;
+  border-bottom: 1px solid #e3e6eb;
+  background: #fafbfc;
+}
+
+.settings-modal__tab {
+  flex: 1 1 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #6e7681;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.settings-modal__tab:hover {
+  color: #1f2328;
+}
+
+.settings-modal__tab--active {
+  color: #0d6efd;
+  border-bottom-color: #0d6efd;
+  font-weight: 600;
+}
+
+/* ---- 设置面板标签内容区 ---- */
+.settings-modal__tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-modal__tab-content[hidden] {
+  display: none;
+}
+
 .settings-modal__form {
   padding: 16px;
   display: flex;
@@ -171,6 +212,55 @@ body {
   outline: 2px solid #0d6efd33;
   border-color: #0d6efd;
 }
+
+.settings-field textarea {
+  padding: 8px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  line-height: 1.5;
+  background: #ffffff;
+  color: #1f2328;
+  resize: vertical;
+  min-height: 160px;
+}
+
+.settings-field textarea:focus {
+  outline: 2px solid #0d6efd33;
+  border-color: #0d6efd;
+}
+
+.settings-field__reset {
+  align-self: flex-end;
+  background: transparent;
+  border: 1px solid #d0d7de;
+  color: #6e7681;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.settings-field__reset:hover {
+  color: #1f2328;
+  background: #f3f4f6;
+  border-color: #b0b7c0;
+}
+
+.settings-field__global-notice {
+  font-size: 12px;
+  color: #6e7681;
+  background: #f0f2f5;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #0d6efd;
+  margin: 0;
+  line-height: 1.5;
+}
+
 .settings-field__hint {
   font-size: 11px;
   color: #6e7681;
@@ -226,7 +316,7 @@ body {
 }
 
 .pane {
-  flex: 1 1 0;
+  flex: 0 0 auto; /* 宽度由 JS 控制（百分比），不再参与 flex 伸缩 */
   min-width: 0;
   background: #ffffff;
   border-right: 1px solid #e3e6eb;
@@ -240,19 +330,34 @@ body {
   border-right: none;
 }
 
-/* 各栏宽度比例：PDF 略宽，AI 略宽，文本适中 */
+/* 各栏背景色（宽度由 JS 设置百分比，详见 paneResize.js） */
 .pane--pdf {
-  flex: 1.2 1 0;
   background: #525659; /* PDF 原版背景，模拟阅读器深底 */
 }
 
 .pane--text {
-  flex: 1 1 0;
+  /* 背景继承 .pane */
 }
 
 .pane--ai {
-  flex: 1.1 1 0;
   background: #fafbfc;
+}
+
+/* ---------- 分隔条（可拖拽调整栏宽） ---------- */
+.pane-gutter {
+  width: 6px;
+  background: #e3e6eb;
+  cursor: col-resize;
+  flex: 0 0 auto;
+  transition: background 0.15s;
+}
+
+.pane-gutter:hover {
+  background: #0d6efd;
+}
+
+.pane-gutter--dragging {
+  background: #0b5ed7;
 }
 
 /* ---------- 面板空态占位 ---------- */
@@ -759,14 +864,29 @@ body {
     height: auto;
   }
 
+  .pane-gutter {
+    display: none;
+  }
+
   .pane {
     border-right: none;
     border-bottom: 1px solid #e3e6eb;
     min-height: 320px;
     flex: 1 1 auto;
+    width: 100% !important; /* 覆盖 JS 设置的行内宽度 */
   }
 
   .pane--pdf .pane__scroll {
     padding: 12px;
+  }
+
+  .settings-modal__panel {
+    width: 480px;
+  }
+}
+
+@media (max-width: 540px) {
+  .settings-modal__panel {
+    width: 96vw;
   }
 }
