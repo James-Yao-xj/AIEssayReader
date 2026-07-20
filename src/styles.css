@@ -316,7 +316,7 @@ body {
 }
 
 .pane {
-  flex: 1 1 0;
+  flex: 0 0 auto; /* 宽度由 JS 控制（百分比），不再参与 flex 伸缩 */
   min-width: 0;
   background: #ffffff;
   border-right: 1px solid #e3e6eb;
@@ -330,19 +330,34 @@ body {
   border-right: none;
 }
 
-/* 各栏宽度比例：PDF 略宽，AI 略宽，文本适中 */
+/* 各栏背景色（宽度由 JS 设置百分比，详见 paneResize.js） */
 .pane--pdf {
-  flex: 1.2 1 0;
   background: #525659; /* PDF 原版背景，模拟阅读器深底 */
 }
 
 .pane--text {
-  flex: 1 1 0;
+  /* 背景继承 .pane */
 }
 
 .pane--ai {
-  flex: 1.1 1 0;
   background: #fafbfc;
+}
+
+/* ---------- 分隔条（可拖拽调整栏宽） ---------- */
+.pane-gutter {
+  width: 6px;
+  background: #e3e6eb;
+  cursor: col-resize;
+  flex: 0 0 auto;
+  transition: background 0.15s;
+}
+
+.pane-gutter:hover {
+  background: #0d6efd;
+}
+
+.pane-gutter--dragging {
+  background: #0b5ed7;
 }
 
 /* ---------- 面板空态占位 ---------- */
@@ -849,11 +864,16 @@ body {
     height: auto;
   }
 
+  .pane-gutter {
+    display: none;
+  }
+
   .pane {
     border-right: none;
     border-bottom: 1px solid #e3e6eb;
     min-height: 320px;
     flex: 1 1 auto;
+    width: 100% !important; /* 覆盖 JS 设置的行内宽度 */
   }
 
   .pane--pdf .pane__scroll {

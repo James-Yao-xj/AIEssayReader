@@ -235,6 +235,67 @@ textPane（中栏选中追问）和 aiPane（对话 tab）通过 store.ui.quickA
 
 ---
 
+## 7. 三栏拖拽调整宽度（paneResize.js）
+
+### 宽度模型
+
+放弃 CSS flex 固定比例，改用 JS 控制的百分比宽度：
+
+```js
+// 默认比例（PDF/文本/AI），总和 ~99%，留 ~1% 给 gutter
+const DEFAULT_RATIOS = [36, 30, 33];
+```
+
+每个 `.pane` 设 `flex: 0 0 auto` + `style.width = 'xx%'`。两条 6px 的 `.pane-gutter` 占据剩余空间。
+
+### 拖拽事件流
+
+```
+mousedown on gutter (e.button === 0)
+  → 记录 startX、两侧 pane 当前 width%、container.clientWidth
+  → document 绑定 mousemove + mouseup
+  → body: userSelect=none, cursor=col-resize
+  → gutter 加 .pane-gutter--dragging
+
+mousemove
+  → deltaPct = (e.clientX - startX) / containerWidth * 100
+  → leftPct = leftStart + deltaPct; rightPct = rightStart - deltaPct
+  → 约束: both >= max(15%, 200px / containerWidth * 100)
+  → 约束后保持 total = leftStart + rightStart（另一边吸收差值）
+  → 更新两侧 pane.style.width
+
+mouseup
+  → 解绑 document 事件，恢复 body 样式，移除 dragging class
+  → savePaneRatios(ratios) 持久化到 localStorage
+```
+
+### 持久化
+
+```js
+// storage.js
+const RATIO_KEY = 'aie:pane-ratios';
+loadPaneRatios()   // → [36, 30, 33]（默认 fallback）
+savePaneRatios(ratios) // → boolean
+```
+
+与 `aie:settings` 分离，互不干扰。加载时验证：必须是长度为 3 的数组，每项为正有限数。
+
+### 响应式
+
+窄屏 `@media (max-width: 960px)`：
+- `.pane-gutter { display: none; }`
+- `.pane { width: 100% !important; flex: 1 1 auto; }`
+- JS 中 `mousedown` / `dblclick` 守卫 `window.innerWidth <= 960` 不响应
+
+### 错误做法
+
+- ❌ 用 flex 比例做拖拽目标（flex-basis 受内容影响，不准）
+- ❌ 事件绑在 gutter 自身上（鼠标快速移动会脱离元素）
+- ❌ 不 guard `e.button !== 0`（右键/中键误触发拖拽）
+- ❌ 拖拽中频繁读 `container.clientWidth`（窗口 resize 时不变，拖拽开始时读一次即可）
+
+---
+
 ## 7. 文件结构约定
 
 ```
@@ -257,6 +318,7 @@ src/
 │   ├── aiPane.js        右栏 AI 面板
 │   ├── render.js        Markdown + KaTeX 渲染
 │   ├── settings.js      设置面板 modal
+│   ├── paneResize.js    三栏拖拽调整宽度
 │   └── textPane.js      中栏文本 + 追问联动
 └── utils/
     └── errors.js        跨模块共享工具
@@ -273,7 +335,8 @@ src/
 - 单文件 `src/styles.css`，按注释分区（顶部条 / 三栏 / 面板 / 表单 / 响应式 / …）
 - Class naming：BEM 浅层（如 `.pane__scroll`、`.ai-tab--active`）
 - 主色：`#0d6efd`（蓝）、背景 `#f5f6f8`、边框 `#e3e6eb`
-- 三栏用 `flex: 1.2 / 1 / 1.1` 比例，`min-width: 0` 防止内容撑破
-- 窄屏 960px 断点 → `flex-direction: column` 堆叠
+- 三栏默认比例 36% / 30% / 33%，由 `paneResize.js` 初始化时设置 `style.width`；`flex: 0 0 auto` 防止内容撑破
+- 分隔条（`.pane-gutter`）：6px 宽，`col-resize` 光标，hover 变蓝（`#0d6efd`），拖拽中加深（`#0b5ed7`）
+- 窄屏 960px 断点 → `flex-direction: column` 堆叠，gutter 隐藏，pane 宽度重置
 - PDF 左栏背景 `#525659`（深色模拟阅读器）；AI 右栏 `#fafbfc`
 - KaTeX 公式块：`overflow-x: auto`（防长公式撑爆布局）

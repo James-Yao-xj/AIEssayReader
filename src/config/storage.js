@@ -60,6 +60,47 @@ export function clearSettings() {
   }
 }
 
+// ---- 三栏宽度比例持久化 ----
+const RATIO_KEY = 'aie:pane-ratios';
+/** 默认三栏比例（PDF / 文本 / AI），总和 99%，留约 1% 给两条 gutter */
+const DEFAULT_RATIOS = [36, 30, 33];
+
+/**
+ * 从 localStorage 读取三栏宽度比例。
+ * 任何异常都回退到默认值，绝不抛错。
+ * @returns {number[]}
+ */
+export function loadPaneRatios() {
+  try {
+    const raw = localStorage.getItem(RATIO_KEY);
+    if (!raw) return [...DEFAULT_RATIOS];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length !== 3) return [...DEFAULT_RATIOS];
+    const valid = parsed.every(
+      (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+    );
+    if (!valid) return [...DEFAULT_RATIOS];
+    return parsed;
+  } catch {
+    return [...DEFAULT_RATIOS];
+  }
+}
+
+/**
+ * 保存三栏宽度比例到 localStorage。
+ * @param {number[]} ratios - 三个百分比数字
+ * @returns {boolean}
+ */
+export function savePaneRatios(ratios) {
+  try {
+    const rounded = ratios.map((v) => Math.round(v * 100) / 100);
+    localStorage.setItem(RATIO_KEY, JSON.stringify(rounded));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 只保留已知字段，过滤掉意外的 key（localStorage 可能被外部写入脏数据）。
  * @param {any} obj
