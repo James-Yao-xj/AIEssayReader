@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/07-21-fix-formula-recognition/prd.md", "reason": "Acceptance criteria to verify against"}
+{"file": ".trellis/tasks/07-21-fix-formula-recognition/design.md", "reason": "Design contracts to validate implementation against"}
+{"file": ".trellis/spec/frontend/project-patterns.md", "reason": "Code patterns to verify: KaTeX usage, store conventions, module structure"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality standards for review"}
+{"file": ".trellis/spec/shared/git-conventions.md", "reason": "Commit message format"}
