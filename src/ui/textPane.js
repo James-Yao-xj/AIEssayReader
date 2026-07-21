@@ -12,6 +12,7 @@
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
+import { renderMarkdown } from './render.js';
 
 /** @type {HTMLElement | null} */
 let askBtn = null;
@@ -90,12 +91,14 @@ export function renderText(result) {
       el('div', { class: 'text-meta' }, parts.join(' · ')),
     );
   }
-  // 分页
+  // 分页 — 每页正文走 marked+KaTeX 渲染
   const frag = document.createDocumentFragment();
   for (const p of pages) {
+    const bodyEl = el('div', { class: 'text-page__body' });
+    renderMarkdown(bodyEl, p.text || '（无文本）');
     const pageDiv = el('div', { class: 'text-page' },
       el('div', { class: 'text-page__head' }, `第 ${p.pageNum} 页`),
-      el('div', { class: 'text-page__body' }, p.text || '（无文本）'),
+      bodyEl,
     );
     frag.appendChild(pageDiv);
   }

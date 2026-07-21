@@ -87,44 +87,91 @@ export async function extractText(file) {
 
 /**
  * 把 pdf.js 的 TextContent（一组带坐标的 text item）拼成可读字符串。
- * 启发式：Y 坐标显著变化时插入换行；item.hasEOL 也作为换行信号。
- * 不强求 100% 还原排版，目标是给 AI 一份结构大致正确的纯文本。
+ *
+ * 算法（design.md §1.2）：
+ *   Phase 1 — 字号感知行分组：用 item.height 计算阈值，ΔY > 0.5×字号才视为换行；
+ *             较小的 Y 偏移（上下标、符号位移）保留在同一逻辑行内。
+ *   Phase 2 — 同行内 X 排序：保证左→右阅读顺序。
+ *   Phase 3 — 智能间距拼接：相邻 item X 间距超过平均字符宽时插入空格。
  *
  * @param {{ items: Array<any> }} textContent
  * @returns {string}
  */
 function textContentToString(textContent) {
   if (!textContent?.items?.length) return '';
-  /** @type {string[]} */
-  const lines = [];
+
+  // ---- Phase 1: 字号感知行分组 ----
+  /** @type {Array<Array<typeof textContent.items[0]>>} */
+  const lineGroups = [];
+  /** @type {Array<typeof textContent.items[0]>} */
+  let curGroup = [];
   let lastY = null;
-  let cur = '';
-  const EPS = 2; // 像素级容差：Y 差异大于此值视为换行
+  let lastH = null;
 
   for (const item of textContent.items) {
     if (!item || typeof item.str !== 'string') continue;
-    const ty = item.transform?.[5];
+    const y = item.transform?.[5];
+    const h = item.height || lastH || 12; // 降级：取上一项高度或 12px 默认
+    const threshold = h * 0.5;
+
     if (
       lastY !== null &&
-      typeof ty === 'number' &&
-      Math.abs(ty - lastY) > EPS
+      typeof y === 'number' &&
+      Math.abs(y - lastY) > threshold
     ) {
-      lines.push(cur);
-      cur = '';
+      // 真换行：Y 偏移超过半行高
+      if (curGroup.length) lineGroups.push(curGroup);
+      curGroup = [];
     }
-    cur += item.str;
+    curGroup.push(item);
+
     if (item.hasEOL) {
-      lines.push(cur);
-      cur = '';
+      if (curGroup.length) lineGroups.push(curGroup);
+      curGroup = [];
       lastY = null;
-    } else if (typeof ty === 'number') {
-      lastY = ty;
+      lastH = null;
+    } else if (typeof y === 'number') {
+      lastY = y;
+      lastH = h;
     }
   }
-  if (cur) lines.push(cur);
+  if (curGroup.length) lineGroups.push(curGroup);
 
-  // pdf.js 偶尔返回 NUL 字符（U+0000），统一清掉；再处理行尾空白与多余空行
+  // ---- Phase 2 + 3: 同行 X 排序 → 智能间距拼接 ----
   const NUL = String.fromCharCode(0);
+  const lines = lineGroups.map((group) => {
+    // 按 X 坐标升序（transform[4]），缺失 X 的项保持原序
+    const sorted = [...group].sort((a, b) => {
+      const ax = a.transform?.[4];
+      const bx = b.transform?.[4];
+      if (typeof ax === 'number' && typeof bx === 'number') return ax - bx;
+      return 0;
+    });
+
+    // 智能间距拼接
+    let result = '';
+    let lastX = null;
+    let lastW = null;
+    for (const item of sorted) {
+      const x = item.transform?.[4];
+      const w = item.width;
+      // 若 X 间距超过阈值（0.3×字高），插入空格
+      if (
+        typeof x === 'number' &&
+        typeof lastX === 'number' &&
+        typeof lastW === 'number' &&
+        x - (lastX + lastW) > (item.height || 12) * 0.3
+      ) {
+        result += ' ';
+      }
+      result += item.str;
+      if (typeof x === 'number') lastX = x;
+      lastW = typeof w === 'number' ? w : null;
+    }
+    return result;
+  });
+
+  // 后处理：清理 NUL、行尾空白、多余空行
   return lines
     .join('\n')
     .split(NUL)
