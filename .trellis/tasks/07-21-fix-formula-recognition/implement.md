@@ -1,38 +1,45 @@
-# Implement: 修复PDF公式识别乱码并支持LaTeX渲染
+# Implement: AI 视觉识别方案
 
 ## Checklist
 
-### Step 1: 改进文本提取算法
+### Step 1: Vision 提取模块
 
-- [x] 1.1 重写 `src/pdf/extract.js` 的 `textContentToString()`：
-  - 用 `item.height` 计算动态阈值 `0.5 * lineHeight`
-  - 同行 items 按 `transform[4]`（X 坐标）排序
-  - 根据 X 间距智能插入空格
-  - 保留 `hasEOL` 强制换行逻辑
-  - 保留 NUL 清理和尾部空白规范化的后处理
-- [x] 1.2 添加降级：`height` 不可用时回退 `lineHeight = 12`
+- [ ] 1.1 新建 `src/pdf/vision.js`：
+  - `renderPageToImage(page, scale=2.0)` → data URL
+  - `extractWithVision(file, {signal, onProgress})` → `{meta, fullText, pages}`
+  - Vision prompt（中文，要求 LaTeX 输出）
+  - 单页失败不阻塞其余页
+  - signal.aborted 时抛错停止
 
-### Step 2: 中栏 KaTeX 渲染
+### Step 2: OpenAI vision 支持
 
-- [x] 2.1 `src/ui/textPane.js` 中导入 `renderMarkdown` 从 `./render.js`
-- [x] 2.2 `renderText()` 中，`text-page__body` 的内容改用 `renderMarkdown(el, text)` 替代纯文本
+- [ ] 2.1 `src/ai/openai.js`：新增 `buildVisionMessage(prompt, imageBase64)`
+- [ ] 2.2 确保 `chat()` 方法支持 content 数组格式
 
-### Step 3: 验证
+### Step 3: 文本中栏 UI
 
-- [x] 3.1 `npm run build` 构建成功
-- [ ] 3.2 找一份含公式的 PDF，验证提取后公式不再跳行
-- [ ] 3.3 验证中栏追问（选中文本 → "追问"按钮）功能正常
-- [ ] 3.4 验证纯文本 PDF 表现不退化
+- [ ] 3.1 `src/ui/textPane.js`：`renderText()` 中在元信息栏添加"AI 识别"按钮
+- [ ] 3.2 添加进度显示/取消功能
+- [ ] 3.3 暴露 `onVisionExtract` 回调注册给 main.js
+
+### Step 4: 主线装配
+
+- [ ] 4.1 `src/main.js`：绑定"AI 识别"按钮事件
+- [ ] 4.2 调用 `extractWithVision()`，处理进度、取消、结果写入 store
+- [ ] 4.3 成功后 `renderText()` 刷新中栏
+
+### Step 5: 验证
+
+- [ ] 5.1 `npm run build` 构建成功
+- [ ] 5.2 API 未配置时按钮给出提示
+- [ ] 5.3 含公式 PDF 识别后 LaTeX 正确渲染
+- [ ] 5.4 进度显示 + 取消功能正常
 
 ## 改动文件清单
 
 | 文件 | 改动类型 | 风险 |
 |------|----------|------|
-| `src/pdf/extract.js` | 重写核心算法 | 中 |
-| `src/ui/textPane.js` | 小幅改动（导入 + 渲染调用替换） | 低 |
-
-## 回滚点
-
-- Step 1 完成后可独立验证（先 `npm run dev` 测试提取效果）
-- Step 2 是纯增量改动，出问题不影响 Step 1 的效果
-- 两个 step 均为 `src/` 下改动，`git checkout -- <file>` 即可回滚
+| `src/pdf/vision.js` | **新建** | 中 |
+| `src/ai/openai.js` | 小幅改动（新增工具函数） | 低 |
+| `src/ui/textPane.js` | 小幅改动（新增按钮+进度） | 低 |
+| `src/main.js` | 小幅改动（绑定事件） | 低 |
