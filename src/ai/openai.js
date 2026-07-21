@@ -28,13 +28,14 @@ export function createOpenAIProvider(config) {
   const endpoint = `${baseUrl}/chat/completions`;
 
   /**
-   * 流式 chat。
+   * 流式 chat。opts.stream=false 时做非流式调用（如 vision OCR）。
    * @param {import('./provider.js').OpenAiMessage[]} messages
-   * @param {{ signal?: AbortSignal }} [opts]
+   * @param {{ signal?: AbortSignal, stream?: boolean }} [opts]
    * @returns {AsyncIterable<string>}
    */
   async function* chat(messages, opts) {
     const signal = opts?.signal;
+    const stream = opts?.stream ?? true;
 
     /** @type {Response} */
     let res;
@@ -49,7 +50,7 @@ export function createOpenAIProvider(config) {
           model,
           messages,
           temperature,
-          stream: true,
+          stream,
         }),
         signal,
       });
@@ -65,6 +66,17 @@ export function createOpenAIProvider(config) {
       const text = await safeReadText(res);
       throw makeError(res.status, text);
     }
+
+    // 非流式：直接解析 JSON 返回全文
+    if (!stream) {
+      const json = await res.json();
+      const content = json?.choices?.[0]?.message?.content;
+      if (typeof content === 'string' && content.length > 0) {
+        yield content;
+      }
+      return;
+    }
+
     if (!res.body) {
       throw new Error('AI 服务响应没有 body（流式响应不可用）。');
     }
@@ -129,7 +141,7 @@ export function createOpenAIProvider(config) {
   /**
    * 非流式 chatOnce：基于 chat 聚合。
    * @param {import('./provider.js').OpenAiMessage[]} messages
-   * @param {{ signal?: AbortSignal }} [opts]
+   * @param {{ signal?: AbortSignal, stream?: boolean }} [opts]
    * @returns {Promise<string>}
    */
   async function chatOnce(messages, opts) {
@@ -146,6 +158,27 @@ export function createOpenAIProvider(config) {
 // 给 client.js / 测试一个统一入口别名（与 provider.js 的 createProvider 同名）。
 // 注意：openai.js 是 provider.js 接口的具体实现；client.js 默认从本文件 import。
 export { createOpenAIProvider as createProvider };
+
+/**
+ * 构建一条 vision 消息（content 为数组格式：text + image_url）。
+ * 适用 OpenAI vision 兼容接口（GPT-4V、GPT-4o 等）。
+ *
+ * @param {string} prompt 文本提示词
+ * @param {string} imageDataUrl data:image/png;base64,... 格式的图片
+ * @returns {import('./provider.js').OpenAiMessage}
+ */
+export function buildVisionMessage(prompt, imageDataUrl) {
+  return {
+    role: 'user',
+    content: [
+      { type: 'text', text: prompt },
+      {
+        type: 'image_url',
+        image_url: { url: imageDataUrl, detail: 'high' },
+      },
+    ],
+  };
+}
 
 // ---------- 内部工具 ----------
 

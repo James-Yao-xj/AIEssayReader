@@ -1,10 +1,13 @@
 /* =========================================================
  * src/ui/textPane.js
  *
- * 中栏——提取文本展示 + 选中文本追问联动。
+ * 中栏——提取文本展示 + 选中文本追问联动 + AI 视觉识别按钮。
  *
  * 暴露：initTextPane()（创建浮层按钮 + 绑定事件）、
- *       renderText(result)（把 extractText 结果渲染到中栏）。
+ *       renderText(result)（把 extractText 结果渲染到中栏）、
+ *       setVisionHandler(fn)（注册 AI 识别按钮回调）、
+ *       setVisionProgress(current, total)（更新进度）、
+ *       hideVisionProgress()（隐藏进度）。
  *
  * 追问联动（design.md §4）：
  *   用户选中一段文本 → 浮出"追问"按钮 → 点击后切到对话 tab
@@ -20,6 +23,19 @@ let askBtn = null;
 let scrollEl = null;
 /** @type {string | null} */
 let selectedText = null;
+
+// AI 识别相关
+/** @type {(() => void) | null} */
+let visionHandler = null;
+/** @type {HTMLElement | null} */
+let visionBtn = null;
+/** @type {HTMLElement | null} */
+let visionCancelBtn = null;
+/** @type {HTMLElement | null} */
+let visionProgress = null;
+/** @type {AbortController | null} */
+let visionAbort = null;
+let visionRunning = false;
 
 /**
  * 初始化：创建浮层"追问"按钮（始终挂在 #text-scroll），绑定 selection 事件。
@@ -62,6 +78,55 @@ export function initTextPane() {
 }
 
 /**
+ * 注册 AI 视觉识别按钮的回调。main.js 在加载 PDF 后调用此方法。
+ * @param {() => Promise<void>} fn
+ */
+export function setVisionHandler(fn) {
+  visionHandler = fn;
+  // 如果按钮已存在，确保可用
+  if (visionBtn) {
+    visionBtn.disabled = false;
+    visionBtn.textContent = 'AI 识别';
+  }
+}
+
+/**
+ * 设置 AbortController（供 main.js 在开始识别前调用）。
+ * @param {AbortController} ctrl
+ */
+export function setVisionAbort(ctrl) {
+  visionAbort = ctrl;
+}
+
+/**
+ * 更新 AI 识别进度显示。
+ * @param {number} current
+ * @param {number} total
+ */
+export function setVisionProgress(current, total) {
+  visionRunning = true;
+  if (visionBtn) {
+    visionBtn.textContent = `识别中 ${current}/${total}…`;
+    visionBtn.disabled = true;
+  }
+  if (visionCancelBtn) visionCancelBtn.hidden = false;
+}
+
+/**
+ * 隐藏 AI 识别进度（识别完成或取消后）。
+ */
+export function hideVisionProgress() {
+  visionRunning = false;
+  visionAbort = null;
+  if (visionBtn) {
+    visionBtn.textContent = 'AI 识别';
+    visionBtn.disabled = false;
+  }
+  if (visionCancelBtn) visionCancelBtn.hidden = true;
+  if (visionProgress) visionProgress.hidden = true;
+}
+
+/**
  * 把 extractText 的结果渲染到中栏 #text-scroll。
  * @param {{ meta: any, fullText: string, pages: Array<{pageNum:number, text:string}> }} result
  */
@@ -81,16 +146,44 @@ export function renderText(result) {
     );
     return;
   }
-  // 元信息
+  // 元信息 + AI 识别按钮
   const meta = result.meta || {};
-  if (meta.title || meta.authors?.length) {
-    const parts = [];
-    if (meta.title) parts.push(meta.title);
-    if (meta.authors?.length) parts.push(meta.authors.join(', '));
-    scrollEl.appendChild(
-      el('div', { class: 'text-meta' }, parts.join(' · ')),
-    );
+  const metaDiv = el('div', { class: 'text-meta' });
+  const parts = [];
+  if (meta.title) parts.push(meta.title);
+  if (meta.authors?.length) parts.push(meta.authors.join(', '));
+  if (parts.length) {
+    metaDiv.appendChild(document.createTextNode(parts.join(' · ')));
   }
+  // AI 识别按钮
+  visionBtn = document.createElement('button');
+  visionBtn.className = 'ai-btn ai-btn--primary text-vision-btn';
+  visionBtn.textContent = 'AI 识别';
+  visionBtn.title = '用 AI 视觉模型精确识别论文文字和公式（需要支持 vision 的模型）';
+  visionBtn.addEventListener('click', () => {
+    if (visionRunning) return;
+    if (!visionHandler) {
+      alert('请先在设置中配置 API Key 和模型。');
+      return;
+    }
+    visionHandler();
+  });
+  metaDiv.appendChild(visionBtn);
+
+  // 取消按钮（初始隐藏）
+  visionCancelBtn = document.createElement('button');
+  visionCancelBtn.className = 'ai-btn ai-btn--ghost text-vision-cancel';
+  visionCancelBtn.textContent = '取消';
+  visionCancelBtn.hidden = true;
+  visionCancelBtn.addEventListener('click', () => {
+    if (visionAbort) {
+      visionAbort.abort();
+    }
+  });
+  metaDiv.appendChild(visionCancelBtn);
+
+  scrollEl.appendChild(metaDiv);
+
   // 分页 — 每页正文走 marked+KaTeX 渲染
   const frag = document.createDocumentFragment();
   for (const p of pages) {

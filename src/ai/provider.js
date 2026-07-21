@@ -17,7 +17,7 @@
  */
 
 /**
- * @typedef {{ role: 'system' | 'user' | 'assistant', content: string }} OpenAiMessage
+ * @typedef {{ role: 'system' | 'user' | 'assistant', content: string | Array<{type: string, text?: string, image_url?: {url: string, detail?: string}}> }} OpenAiMessage
  */
 
 /**
