@@ -62,8 +62,8 @@ export function initSettings() {
 
         <div class="settings-modal__tab-content" data-tab-content="basic">
           <!-- 文本识别模型 -->
-          <fieldset class="settings-fieldset">
-            <legend class="settings-fieldset__legend">文本识别模型</legend>
+          <fieldset class="settings-fieldset settings-fieldset--recognition">
+            <legend class="settings-fieldset__legend">📷 文本识别模型</legend>
             <p class="settings-fieldset__desc">用于 AI 视觉识别，将 PDF 页面转为文字。需支持图片输入的视觉模型。</p>
 
             <label class="settings-field">
@@ -91,8 +91,8 @@ export function initSettings() {
           </fieldset>
 
           <!-- 文本阅读模型 -->
-          <fieldset class="settings-fieldset">
-            <legend class="settings-fieldset__legend">文本阅读模型</legend>
+          <fieldset class="settings-fieldset settings-fieldset--reading">
+            <legend class="settings-fieldset__legend">📖 文本阅读模型</legend>
             <p class="settings-fieldset__desc">用于论文总结、概念解释、批判分析和对话。需强推理能力的模型。</p>
 
             <label class="settings-field">
@@ -488,12 +488,13 @@ async function save() {
     promptChat,
   };
 
-  const ok = saveSettings(newSettings);
-  if (!ok) {
+  const merged = saveSettings(newSettings);
+  if (!merged) {
     showError('保存失败：localStorage 写入异常（可能是隐私模式或配额超限）。');
     return;
   }
-  setState({ settings: newSettings });
+  // 使用 deep-merge 后的结果更新 store，确保与 localStorage 完全一致
+  setState({ settings: merged });
   showError('');
   closeSettings();
 }

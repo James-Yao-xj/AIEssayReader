@@ -37,6 +37,18 @@ export function createOpenAIProvider(config) {
     const signal = opts?.signal;
     const stream = opts?.stream ?? true;
 
+    // 诊断日志：输出当前调用的模型与端点（apiKey 脱敏）
+    const maskedKey =
+      apiKey.length > 8
+        ? apiKey.slice(0, 8) + '...'
+        : apiKey
+          ? '***'
+          : '(未设置)';
+    console.info(
+      `[AI] 请求模型：${model} → ${endpoint}` +
+        `（Key: ${maskedKey}，temperature: ${temperature}，stream: ${stream}）`,
+    );
+
     /** @type {Response} */
     let res;
     try {
@@ -189,19 +201,49 @@ export function buildVisionMessage(prompt, imageDataUrl) {
 function makeError(status, bodyText) {
   const snippet = (bodyText || '').slice(0, 500).trim();
   const tail = snippet ? ` 响应片段：${snippet}` : '';
-  if (status === 401 || status === 403) {
+
+  // 尝试从响应体解析 OpenAI 兼容的错误码，给出更精确的提示
+  let errorCode = '';
+  let errorMsg = '';
+  try {
+    const json = JSON.parse(bodyText || '{}');
+    errorCode = json?.error?.code || '';
+    errorMsg = json?.error?.message || '';
+  } catch {
+    /* 响应体不是 JSON，忽略 */
+  }
+
+  // 模型名错误（OpenAI 兼容 API 通常返回 404 + model_not_found）
+  if (errorCode === 'model_not_found') {
     return new Error(
-      `API Key 无效或未授权（HTTP ${status}）。请在设置面板检查 Key 与 Base URL。${tail}`,
+      `模型不存在或无访问权限。${errorMsg ? `服务器返回：${errorMsg}。` : ''}请在设置面板检查模型名称拼写是否正确。`,
+    );
+  }
+
+  if (status === 401 || status === 403) {
+    const detail =
+      errorCode === 'invalid_api_key'
+        ? '服务器返回：API Key 无效。'
+        : '';
+    return new Error(
+      `API Key 无效或未授权（HTTP ${status}）。${detail}请在设置面板检查 Key 与 Base URL。${tail}`,
     );
   }
   if (status === 404) {
+    // 排除了 model_not_found 之后的 404 → 确实是路径问题
     return new Error(
       `接口路径不存在（HTTP 404）。请检查 Base URL 是否正确（应类似 https://api.openai.com/v1，不要带 /chat/completions）。${tail}`,
     );
   }
   if (status === 429) {
+    const detail =
+      errorCode === 'insufficient_quota'
+        ? '服务器返回：账户额度不足。'
+        : errorCode === 'rate_limit_exceeded'
+          ? '服务器返回：请求频率超限。'
+          : '';
     return new Error(
-      `请求被限流（HTTP 429）。请稍后重试或检查账户额度。${tail}`,
+      `请求被限流（HTTP 429）。${detail}请稍后重试或检查账户额度。${tail}`,
     );
   }
   if (status >= 500) {

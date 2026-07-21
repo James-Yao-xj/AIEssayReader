@@ -41,18 +41,18 @@ export function loadSettings() {
 }
 
 /**
- * 保存设置。失败返回 false（调用方可提示用户）。
+ * 保存设置。成功返回合并后的完整设置对象；失败返回 null（调用方可提示用户）。
  * @param {Partial<import('./defaults.js').Settings>} s
- * @returns {boolean}
+ * @returns {import('./defaults.js').Settings | null} 成功返回合并后的完整设置对象，失败返回 null
  */
 export function saveSettings(s) {
   try {
     const merged = deepMergeSettings(DEFAULT_SETTINGS, s);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-    return true;
+    return merged;
   } catch (err) {
     console.warn('[storage] 保存设置失败：', err);
-    return false;
+    return null;
   }
 }
 

@@ -201,6 +201,16 @@ body {
   gap: 10px;
 }
 
+/* 文本识别模型：蓝色标识 */
+.settings-fieldset--recognition {
+  border-left: 3px solid #4a9eff;
+}
+
+/* 文本阅读模型：绿色标识 */
+.settings-fieldset--reading {
+  border-left: 3px solid #52c41a;
+}
+
 .settings-fieldset__legend {
   font-size: 13px;
   font-weight: 600;
