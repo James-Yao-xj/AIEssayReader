@@ -89,6 +89,12 @@ export async function extractWithVision(file, opts) {
     throw new Error('请先在设置中配置文本识别模型的模型名');
   }
 
+  console.warn('[Config:Use] SOURCE=recognition (vision OCR)', {
+    model: recognition.model,
+    baseUrl: recognition.baseUrl,
+    keyLen: recognition.apiKey?.length || 0,
+  });
+
   const provider = createProvider({
     baseUrl: recognition.baseUrl,
     apiKey: recognition.apiKey,

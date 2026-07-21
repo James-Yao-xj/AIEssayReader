@@ -313,6 +313,11 @@ function syncFormFromStore() {
   setFieldValue('promptExplainConcepts', settings.promptExplainConcepts || DEFAULT_TEMPLATES.promptExplainConcepts);
   setFieldValue('promptCritique', settings.promptCritique || DEFAULT_TEMPLATES.promptCritique);
   setFieldValue('promptChat', settings.promptChat || DEFAULT_TEMPLATES.promptChat);
+
+  console.warn('[Config:Sync] store → form fields', {
+    recognition: { model: rec.model, baseUrl: rec.baseUrl, keyLen: rec.apiKey?.length || 0 },
+    reading: { model: rd.model, baseUrl: rd.baseUrl, keyLen: rd.apiKey?.length || 0 },
+  });
 }
 
 /**
@@ -487,6 +492,11 @@ async function save() {
     promptCritique,
     promptChat,
   };
+
+  console.warn('[Config:Save] form → store', {
+    recognition: { model: recognition.model, baseUrl: recognition.baseUrl, keyLen: recognition.apiKey?.length || 0 },
+    reading: { model: reading.model, baseUrl: reading.baseUrl, keyLen: reading.apiKey?.length || 0 },
+  });
 
   const merged = saveSettings(newSettings);
   if (!merged) {

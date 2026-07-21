@@ -20,11 +20,23 @@ const STORAGE_KEY = 'aie:settings';
 export function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return deepCopyDefaults();
+    if (!raw) {
+      const result = deepCopyDefaults();
+      console.warn('[Config:Load] localStorage → store', {
+        recognition: { model: result.recognition?.model, baseUrl: result.recognition?.baseUrl, keyLen: result.recognition?.apiKey?.length || 0 },
+        reading: { model: result.reading?.model, baseUrl: result.reading?.baseUrl, keyLen: result.reading?.apiKey?.length || 0 },
+      });
+      return result;
+    }
 
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
-      return deepCopyDefaults();
+      const result = deepCopyDefaults();
+      console.warn('[Config:Load] localStorage → store', {
+        recognition: { model: result.recognition?.model, baseUrl: result.recognition?.baseUrl, keyLen: result.recognition?.apiKey?.length || 0 },
+        reading: { model: result.reading?.model, baseUrl: result.reading?.baseUrl, keyLen: result.reading?.apiKey?.length || 0 },
+      });
+      return result;
     }
 
     // 旧版迁移：顶层有 baseUrl 且没有 recognition/reading → 是旧格式
@@ -33,10 +45,20 @@ export function loadSettings() {
     }
 
     // 新格式：与默认值做深合并
-    return deepMergeSettings(DEFAULT_SETTINGS, parsed);
+    const result = deepMergeSettings(DEFAULT_SETTINGS, parsed);
+    console.warn('[Config:Load] localStorage → store', {
+      recognition: { model: result.recognition?.model, baseUrl: result.recognition?.baseUrl, keyLen: result.recognition?.apiKey?.length || 0 },
+      reading: { model: result.reading?.model, baseUrl: result.reading?.baseUrl, keyLen: result.reading?.apiKey?.length || 0 },
+    });
+    return result;
   } catch (err) {
     console.warn('[storage] 读取设置失败，使用默认值：', err);
-    return deepCopyDefaults();
+    const result = deepCopyDefaults();
+    console.warn('[Config:Load] localStorage → store', {
+      recognition: { model: result.recognition?.model, baseUrl: result.recognition?.baseUrl, keyLen: result.recognition?.apiKey?.length || 0 },
+      reading: { model: result.reading?.model, baseUrl: result.reading?.baseUrl, keyLen: result.reading?.apiKey?.length || 0 },
+    });
+    return result;
   }
 }
 
@@ -203,5 +225,9 @@ function migrateFromFlat(old) {
     /* 静默失败——内存中的迁移结果仍然可用 */
   }
 
+  console.warn('[Config:Load] localStorage → store (migrated from flat)', {
+    recognition: { model: result.recognition?.model, baseUrl: result.recognition?.baseUrl, keyLen: result.recognition?.apiKey?.length || 0 },
+    reading: { model: result.reading?.model, baseUrl: result.reading?.baseUrl, keyLen: result.reading?.apiKey?.length || 0 },
+  });
   return result;
 }

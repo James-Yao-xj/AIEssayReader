@@ -60,6 +60,12 @@ function makeProvider(opts) {
     throw new Error('尚未加载论文。请先拖入一个 PDF 文件。');
   }
 
+  console.warn('[Config:Use] SOURCE=reading (text AI)', {
+    model: reading.model,
+    baseUrl: reading.baseUrl,
+    keyLen: reading.apiKey?.length || 0,
+  });
+
   return createProvider({
     baseUrl: reading.baseUrl,
     apiKey: reading.apiKey,
