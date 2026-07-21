@@ -189,6 +189,33 @@ body {
   flex-direction: column;
   gap: 14px;
 }
+
+/* ---- 模型配置区域分组 ---- */
+.settings-fieldset {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 10px 14px 14px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-fieldset__legend {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2328;
+  padding: 0 4px;
+  margin-bottom: 0;
+}
+
+.settings-fieldset__desc {
+  font-size: 12px;
+  color: #6e7681;
+  margin: 0;
+  line-height: 1.5;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;

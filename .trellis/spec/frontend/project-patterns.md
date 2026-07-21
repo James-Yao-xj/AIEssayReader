@@ -79,11 +79,17 @@ createProvider({baseUrl, apiKey, model, temperature}) -> {
 ```js
 {
   paper: null | { name, meta:{title?,authors?,nPages}, fullText, pages:[{pageNum,text}] },
-  settings: { baseUrl, apiKey, model, temperature },
+  settings: {
+    recognition: { baseUrl, apiKey, model, temperature },  // 文本识别模型（vision.js 消费）
+    reading:     { baseUrl, apiKey, model, temperature },  // 文本阅读模型（client.js 消费）
+    promptSummarize, promptExplainConcepts, promptCritique, promptChat,  // 提示词模板
+  },
   messages: [{ role:'user'|'assistant', content }],
   ui: { activeTab, busy: boolean, quickAsk: string|null },
 }
 ```
+
+> **历史**：2026-07-21 前 settings 是扁平结构 `{baseUrl, apiKey, model, temperature}`。拆分为 recognition/reading 两个独立 `ModelConfig` 组，各自可配置不同厂商/密钥/模型。旧数据由 `storage.js` 的 `migrateFromFlat()` 自动迁移——旧值同时复制到两组。
 
 ### 操作
 
@@ -157,18 +163,57 @@ settings.js (textarea 编辑)
 
 6. **GLOBAL_STYLE 永远不可编辑**：设置面板"提示词模板"tab 顶部仅展示一句声明；`buildSystem()` 始终 `parts.push(GLOBAL_STYLE)` 在最前面。
 
-### Settings 字段（更新后）
+### Settings 字段（2026-07-21：拆分为识别/阅读两组）
 
 ```js
-// store.settings 新增 4 个字段
+// store.settings — 两组独立模型配置 + 4 个提示词模板
 {
-  baseUrl, apiKey, model, temperature,  // 原有
-  promptSummarize,                       // 用户自定义"综述"模板（空串 = 用内置默认）
-  promptExplainConcepts,                 // 用户自定义"概念解释"模板
-  promptCritique,                        // 用户自定义"批判质疑"模板
-  promptChat,                            // 用户自定义"对话"模板
+  recognition: { baseUrl, apiKey, model, temperature },  // 文本识别模型（vision.js 消费）
+  reading:     { baseUrl, apiKey, model, temperature },  // 文本阅读模型（client.js 消费）
+  promptSummarize,        // 用户自定义"综述"模板（空串 = 用内置默认）
+  promptExplainConcepts,  // 用户自定义"概念解释"模板
+  promptCritique,         // 用户自定义"批判质疑"模板
+  promptChat,             // 用户自定义"对话"模板
 }
 ```
+
+> **迁移**：旧版扁平格式 `{baseUrl, apiKey, model, temperature, prompt*}` 由 `storage.js` 的 `loadSettings()` 自动检测并迁移。检测条件：顶层存在 `baseUrl` 且无 `recognition`/`reading` 嵌套对象。迁移时旧值同时复制到两组，结果静默写回 localStorage。迁移后两组初始相同，用户可按需改为不同模型。
+
+### 旧数据迁移模式（storage.js）
+
+localStorage 数据结构变更时，在 `loadSettings()` 中实现检测 + 迁移 + 静默写回：
+
+```js
+// 检测旧格式：顶层有 baseUrl 且无 recognition/reading 嵌套
+if (typeof parsed.baseUrl === 'string' && !parsed.recognition && !parsed.reading) {
+  return migrateFromFlat(parsed);
+}
+
+function migrateFromFlat(old) {
+  const result = deepCopyDefaults(); // 以默认值为底
+  // 旧值同时复制到两组
+  ['recognition', 'reading'].forEach((group) => {
+    if (typeof old.baseUrl === 'string')     result[group].baseUrl = old.baseUrl;
+    if (typeof old.apiKey === 'string')      result[group].apiKey = old.apiKey;
+    if (typeof old.model === 'string')       result[group].model = old.model;
+    if (typeof old.temperature === 'number' && Number.isFinite(old.temperature))
+      result[group].temperature = old.temperature;
+  });
+  // 提示词也一起搬
+  ['promptSummarize','promptExplainConcepts','promptCritique','promptChat'].forEach((k) => {
+    if (typeof old[k] === 'string') result[k] = old[k];
+  });
+  // 静默写回（失败不阻塞——内存中结果仍可用）
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(result)); } catch {}
+  return result;
+}
+```
+
+迁移要点：
+- **只迁移一次**：检测旧格式 → 合并 → 写回新格式 → 下次读取直接走新格式分支
+- **深合并**：嵌套对象（recognition/reading）做子字段级合并，不会因用户存了一个字段而丢失其他默认字段
+- **静默失败**：写回 localStorage 失败不抛错（隐私模式/配额超限），内存中的迁移结果仍然可用
+- **以默认值为底**：`deepCopyDefaults()` 保证新字段有默认值，只覆盖用户实际填过的字段
 
 ### 滑窗规则（context.js）
 

@@ -5,6 +5,7 @@
  *
  * 复用 pdf.js（render）做页面渲染，复用 openai.js 的 createProvider 做 API 调用。
  * 串行逐页处理，支持 AbortSignal 取消 + onProgress 进度回调。
+ * 从 settings.recognition 读取文本识别模型配置。
  * ========================================================= */
 
 import { pdfjsLib } from './extract.js';
@@ -75,23 +76,24 @@ export async function extractWithVision(file, opts) {
   const signal = opts?.signal;
   const onProgress = opts?.onProgress;
 
-  // 校验 settings
+  // 校验 settings —— 从 recognition 配置组取值
   const { settings } = getState();
-  if (!settings.apiKey?.trim()) {
-    throw new Error('请先在设置中配置 API Key');
+  const { recognition } = settings;
+  if (!recognition?.apiKey?.trim()) {
+    throw new Error('请先在设置中配置文本识别模型的 API Key');
   }
-  if (!settings.baseUrl?.trim()) {
-    throw new Error('请先在设置中配置 Base URL');
+  if (!recognition?.baseUrl?.trim()) {
+    throw new Error('请先在设置中配置文本识别模型的 Base URL');
   }
-  if (!settings.model?.trim()) {
-    throw new Error('请先在设置中配置模型名');
+  if (!recognition?.model?.trim()) {
+    throw new Error('请先在设置中配置文本识别模型的模型名');
   }
 
   const provider = createProvider({
-    baseUrl: settings.baseUrl,
-    apiKey: settings.apiKey,
-    model: settings.model,
-    temperature: 0, // OCR 任务用 0 温度保证一致性
+    baseUrl: recognition.baseUrl,
+    apiKey: recognition.apiKey,
+    model: recognition.model,
+    temperature: 0, // OCR 任务始终用 0 温度保证一致性
   });
 
   // ---- Phase 1: 获取 PDF 文档 ----

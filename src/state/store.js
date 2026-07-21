@@ -33,10 +33,18 @@
 let state = {
   paper: null,
   settings: {
-    baseUrl: '',
-    apiKey: '',
-    model: '',
-    temperature: 0.3,
+    recognition: {
+      baseUrl: '',
+      apiKey: '',
+      model: '',
+      temperature: 0.3,
+    },
+    reading: {
+      baseUrl: '',
+      apiKey: '',
+      model: '',
+      temperature: 0.3,
+    },
   },
   messages: [],
   ui: { activeTab: 'summarize', busy: false, quickAsk: null },

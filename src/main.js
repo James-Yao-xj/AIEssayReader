@@ -403,10 +403,13 @@ setState({ settings: loadSettings() });
 // 3) 顶栏"设置"按钮 → 打开设置面板
 btnSettings?.addEventListener('click', () => openSettings());
 
-// 4) 订阅 settings 变化：未填 API Key 时显示徽标提示
+// 4) 订阅 settings 变化：两组 API Key 均未填时显示徽标提示
 function syncKeyHint(settings) {
   if (!keyHint) return;
-  const hasKey = !!settings?.apiKey?.trim();
+  const hasRecKey = !!(settings?.recognition?.apiKey?.trim());
+  const hasReadKey = !!(settings?.reading?.apiKey?.trim());
+  // 只要有一组配置了 API Key 就隐藏提示（用户可能只用其中一个功能）
+  const hasKey = hasRecKey || hasReadKey;
   keyHint.hidden = hasKey;
   if (!hasKey) {
     keyHint.textContent = '未配置 API Key';

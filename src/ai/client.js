@@ -10,7 +10,7 @@
  *   chat 同样流式，且：
  *     ① 流式开始前把 userText 入 store.messages
  *     ② 流式结束后把 assistant 全文入 store.messages
- * - 未配置 apiKey 或未加载论文 → 抛带语义的 Error（由 UI 在 Step 4 捕获提示）
+ * - 未配置 reading.apiKey 或未加载论文 → 抛带语义的 Error（由 UI 捕获提示）
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
@@ -37,32 +37,34 @@ function getPromptTemplates() {
 /**
  * 取 provider。每次调用前都重新读 store.settings，保证用户改完设置立即生效。
  * 同时做必要的前置校验，抛带语义的错。
+ * 从 settings.reading 读取文本阅读模型配置（baseUrl / apiKey / model / temperature）。
  * @param {{ requirePaper?: boolean }} [opts]
  */
 function makeProvider(opts) {
   const { requirePaper = true } = opts || {};
   const { settings, paper } = getState();
+  const { reading } = settings;
 
-  if (!settings.apiKey || !settings.apiKey.trim()) {
+  if (!reading?.apiKey || !reading.apiKey.trim()) {
     throw new Error(
-      '未配置 API Key。请点击右上角"设置"按钮，填写 Base URL 与 API Key 后重试。',
+      '未配置文本阅读模型的 API Key。请点击右上角"设置"按钮，在"文本阅读模型"区域填写 Base URL 与 API Key 后重试。',
     );
   }
-  if (!settings.baseUrl || !settings.baseUrl.trim()) {
-    throw new Error('未配置 Base URL，请在设置面板填写。');
+  if (!reading?.baseUrl || !reading.baseUrl.trim()) {
+    throw new Error('未配置文本阅读模型的 Base URL，请在设置面板的"文本阅读模型"区域填写。');
   }
-  if (!settings.model || !settings.model.trim()) {
-    throw new Error('未配置模型名，请在设置面板填写。');
+  if (!reading?.model || !reading.model.trim()) {
+    throw new Error('未配置文本阅读模型的模型名，请在设置面板的"文本阅读模型"区域填写。');
   }
   if (requirePaper && (!paper || !paper.fullText)) {
     throw new Error('尚未加载论文。请先拖入一个 PDF 文件。');
   }
 
   return createProvider({
-    baseUrl: settings.baseUrl,
-    apiKey: settings.apiKey,
-    model: settings.model,
-    temperature: settings.temperature,
+    baseUrl: reading.baseUrl,
+    apiKey: reading.apiKey,
+    model: reading.model,
+    temperature: reading.temperature,
   });
 }
 

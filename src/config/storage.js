@@ -3,8 +3,10 @@
  *
  * localStorage 读写设置。
  * - key 固定为 aie:settings，存 JSON。
- * - 读取时与 defaults 合并，保证新增字段有默认值。
+ * - 读取时与 defaults 合并，保证新增字段有默认值；嵌套对象（recognition/reading）
+ *   进行子字段级合并，不会丢失已保存的独立子字段。
  * - Key 明文存（本地工具可接受，见 design.md §6.5），脱敏在 UI 层处理。
+ * - 自动检测旧版扁平格式（顶层 baseUrl），迁移为新嵌套结构并静默写回。
  * ========================================================= */
 
 import { DEFAULT_SETTINGS } from './defaults.js';
@@ -12,35 +14,40 @@ import { DEFAULT_SETTINGS } from './defaults.js';
 const STORAGE_KEY = 'aie:settings';
 
 /**
- * 读取设置：与默认值浅合并；任何异常都回退到 defaults，绝不抛错。
- * @returns {Settings}
+ * 读取设置：含旧版迁移、嵌套深合并；任何异常都回退到 defaults，绝不抛错。
+ * @returns {import('./defaults.js').Settings}
  */
 export function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
+    if (!raw) return deepCopyDefaults();
+
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
-      return { ...DEFAULT_SETTINGS };
+      return deepCopyDefaults();
     }
-    return {
-      ...DEFAULT_SETTINGS,
-      ...pickKnownFields(parsed),
-    };
+
+    // 旧版迁移：顶层有 baseUrl 且没有 recognition/reading → 是旧格式
+    if (typeof parsed.baseUrl === 'string' && !parsed.recognition && !parsed.reading) {
+      return migrateFromFlat(parsed);
+    }
+
+    // 新格式：与默认值做深合并
+    return deepMergeSettings(DEFAULT_SETTINGS, parsed);
   } catch (err) {
     console.warn('[storage] 读取设置失败，使用默认值：', err);
-    return { ...DEFAULT_SETTINGS };
+    return deepCopyDefaults();
   }
 }
 
 /**
  * 保存设置。失败返回 false（调用方可提示用户）。
- * @param {Partial<Settings>} s
+ * @param {Partial<import('./defaults.js').Settings>} s
  * @returns {boolean}
  */
 export function saveSettings(s) {
   try {
-    const merged = { ...DEFAULT_SETTINGS, ...pickKnownFields(s) };
+    const merged = deepMergeSettings(DEFAULT_SETTINGS, s);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     return true;
   } catch (err) {
@@ -101,23 +108,100 @@ export function savePaneRatios(ratios) {
   }
 }
 
+// ============================================================
+// 内部工具函数
+// ============================================================
+
 /**
- * 只保留已知字段，过滤掉意外的 key（localStorage 可能被外部写入脏数据）。
- * @param {any} obj
+ * 深拷贝 DEFAULT_SETTINGS（含嵌套 recognition/reading 对象）。
+ * 避免返回引用，防止调用方意外修改默认值。
+ * @returns {import('./defaults.js').Settings}
  */
-function pickKnownFields(obj) {
-  /** @type {Partial<Settings>} */
-  const out = {};
-  if (typeof obj.baseUrl === 'string') out.baseUrl = obj.baseUrl;
-  if (typeof obj.apiKey === 'string') out.apiKey = obj.apiKey;
-  if (typeof obj.model === 'string') out.model = obj.model;
-  if (typeof obj.temperature === 'number' && Number.isFinite(obj.temperature)) {
-    out.temperature = obj.temperature;
+function deepCopyDefaults() {
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+}
+
+/**
+ * 深合并设置：以 defaults 为底，user 中的值逐字段覆盖。
+ * recognition/reading 做子字段级合并（不会因用户存了一个字段而丢掉其他默认字段）。
+ * @param {import('./defaults.js').Settings} defaults
+ * @param {Partial<import('./defaults.js').Settings>} user
+ * @returns {import('./defaults.js').Settings}
+ */
+function deepMergeSettings(defaults, user) {
+  const result = deepCopyDefaults();
+
+  // 合并 recognition 子字段
+  if (typeof user.recognition === 'object' && user.recognition !== null) {
+    const src = user.recognition;
+    if (typeof src.baseUrl === 'string') result.recognition.baseUrl = src.baseUrl;
+    if (typeof src.apiKey === 'string') result.recognition.apiKey = src.apiKey;
+    if (typeof src.model === 'string') result.recognition.model = src.model;
+    if (typeof src.temperature === 'number' && Number.isFinite(src.temperature)) {
+      result.recognition.temperature = src.temperature;
+    }
   }
-  // 提示词模板（允许空串表示"使用内置默认"）
-  if (typeof obj.promptSummarize === 'string') out.promptSummarize = obj.promptSummarize;
-  if (typeof obj.promptExplainConcepts === 'string') out.promptExplainConcepts = obj.promptExplainConcepts;
-  if (typeof obj.promptCritique === 'string') out.promptCritique = obj.promptCritique;
-  if (typeof obj.promptChat === 'string') out.promptChat = obj.promptChat;
-  return out;
+
+  // 合并 reading 子字段
+  if (typeof user.reading === 'object' && user.reading !== null) {
+    const src = user.reading;
+    if (typeof src.baseUrl === 'string') result.reading.baseUrl = src.baseUrl;
+    if (typeof src.apiKey === 'string') result.reading.apiKey = src.apiKey;
+    if (typeof src.model === 'string') result.reading.model = src.model;
+    if (typeof src.temperature === 'number' && Number.isFinite(src.temperature)) {
+      result.reading.temperature = src.temperature;
+    }
+  }
+
+  // 合并提示词
+  if (typeof user.promptSummarize === 'string') result.promptSummarize = user.promptSummarize;
+  if (typeof user.promptExplainConcepts === 'string') result.promptExplainConcepts = user.promptExplainConcepts;
+  if (typeof user.promptCritique === 'string') result.promptCritique = user.promptCritique;
+  if (typeof user.promptChat === 'string') result.promptChat = user.promptChat;
+
+  return result;
+}
+
+/**
+ * 旧版扁平格式 → 新嵌套格式迁移。
+ * 旧值同时复制到 recognition 和 reading 两组，提示词也一并搬运。
+ * 迁移结果静默写回 localStorage（失败不阻塞）。
+ * @param {any} old
+ * @returns {import('./defaults.js').Settings}
+ */
+function migrateFromFlat(old) {
+  const result = deepCopyDefaults();
+
+  // 旧版顶层字段提取
+  if (typeof old.baseUrl === 'string') {
+    result.recognition.baseUrl = old.baseUrl;
+    result.reading.baseUrl = old.baseUrl;
+  }
+  if (typeof old.apiKey === 'string') {
+    result.recognition.apiKey = old.apiKey;
+    result.reading.apiKey = old.apiKey;
+  }
+  if (typeof old.model === 'string') {
+    result.recognition.model = old.model;
+    result.reading.model = old.model;
+  }
+  if (typeof old.temperature === 'number' && Number.isFinite(old.temperature)) {
+    result.recognition.temperature = old.temperature;
+    result.reading.temperature = old.temperature;
+  }
+
+  // 提示词也一起搬
+  if (typeof old.promptSummarize === 'string') result.promptSummarize = old.promptSummarize;
+  if (typeof old.promptExplainConcepts === 'string') result.promptExplainConcepts = old.promptExplainConcepts;
+  if (typeof old.promptCritique === 'string') result.promptCritique = old.promptCritique;
+  if (typeof old.promptChat === 'string') result.promptChat = old.promptChat;
+
+  // 静默写回 localStorage（失败不阻塞）
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
+  } catch {
+    /* 静默失败——内存中的迁移结果仍然可用 */
+  }
+
+  return result;
 }

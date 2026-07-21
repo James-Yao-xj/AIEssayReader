@@ -2,7 +2,7 @@
  * src/ui/settings.js
  *
  * 设置面板（modal），双标签页结构：
- *   Tab 1 "基本设置" — Base URL / API Key / 模型 / 温度
+ *   Tab 1 "基本设置" — 文本识别模型 + 文本阅读模型 两个独立配置区域
  *   Tab 2 "提示词模板" — 4 个可编辑任务提示词 textarea
  *
  * - 保存 → store.setState({settings}) + storage.saveSettings()
@@ -61,28 +61,63 @@ export function initSettings() {
       <form class="settings-modal__form" id="settings-form" novalidate>
 
         <div class="settings-modal__tab-content" data-tab-content="basic">
-          <label class="settings-field">
-            <span class="settings-field__label">Base URL</span>
-            <input type="url" name="baseUrl" placeholder="https://api.openai.com/v1" required />
-            <span class="settings-field__hint">OpenAI 兼容接口根地址。OpenAI: https://api.openai.com/v1；DeepSeek: https://api.deepseek.com/v1；OpenRouter: https://openrouter.ai/api/v1。末尾斜杠会自动去掉。</span>
-          </label>
+          <!-- 文本识别模型 -->
+          <fieldset class="settings-fieldset">
+            <legend class="settings-fieldset__legend">文本识别模型</legend>
+            <p class="settings-fieldset__desc">用于 AI 视觉识别，将 PDF 页面转为文字。需支持图片输入的视觉模型。</p>
 
-          <label class="settings-field">
-            <span class="settings-field__label">API Key</span>
-            <input type="password" name="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-            <span class="settings-field__hint">仅保存在本地浏览器 localStorage，刷新后仍保留。已配置时本框留空即不修改，绝不在界面回显明文。</span>
-          </label>
+            <label class="settings-field">
+              <span class="settings-field__label">Base URL</span>
+              <input type="url" name="recognition.baseUrl" placeholder="https://api.openai.com/v1" />
+              <span class="settings-field__hint">OpenAI 兼容接口根地址。末尾斜杠会自动去掉。</span>
+            </label>
 
-          <label class="settings-field">
-            <span class="settings-field__label">模型</span>
-            <input type="text" name="model" placeholder="gpt-4o-mini" required />
-          </label>
+            <label class="settings-field">
+              <span class="settings-field__label">API Key</span>
+              <input type="password" name="recognition.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+              <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+            </label>
 
-          <label class="settings-field">
-            <span class="settings-field__label">温度</span>
-            <input type="number" name="temperature" min="0" max="2" step="0.1" value="0.3" required />
-            <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
-          </label>
+            <label class="settings-field">
+              <span class="settings-field__label">模型</span>
+              <input type="text" name="recognition.model" placeholder="gpt-4o-mini" />
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-field__label">温度</span>
+              <input type="number" name="recognition.temperature" min="0" max="2" step="0.1" value="0.3" />
+              <span class="settings-field__hint">OCR 识别始终使用温度 0 以保证转写一致性，此处仅作默认占位。</span>
+            </label>
+          </fieldset>
+
+          <!-- 文本阅读模型 -->
+          <fieldset class="settings-fieldset">
+            <legend class="settings-fieldset__legend">文本阅读模型</legend>
+            <p class="settings-fieldset__desc">用于论文总结、概念解释、批判分析和对话。需强推理能力的模型。</p>
+
+            <label class="settings-field">
+              <span class="settings-field__label">Base URL</span>
+              <input type="url" name="reading.baseUrl" placeholder="https://api.openai.com/v1" />
+              <span class="settings-field__hint">OpenAI 兼容接口根地址。末尾斜杠会自动去掉。</span>
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-field__label">API Key</span>
+              <input type="password" name="reading.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+              <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-field__label">模型</span>
+              <input type="text" name="reading.model" placeholder="gpt-4o-mini" />
+            </label>
+
+            <label class="settings-field">
+              <span class="settings-field__label">温度</span>
+              <input type="number" name="reading.temperature" min="0" max="2" step="0.1" value="0.3" />
+              <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
+            </label>
+          </fieldset>
         </div>
 
         <div class="settings-modal__tab-content settings-modal__tab-content--prompts" data-tab-content="prompts" hidden>
@@ -237,7 +272,7 @@ export function openSettings() {
   modalEl.hidden = false;
   // 自动聚焦第一个空字段
   setTimeout(() => {
-    const baseUrl = formEl?.elements.namedItem('baseUrl');
+    const baseUrl = formEl?.elements.namedItem('recognition.baseUrl');
     if (baseUrl instanceof HTMLInputElement) baseUrl.focus();
   }, 0);
 }
@@ -249,31 +284,52 @@ export function closeSettings() {
 
 /**
  * 把当前 store.settings 同步到表单。
- * - 普通字段从 settings 读取
+ * - 模型配置从 settings.recognition / settings.reading 读取
  * - apiKey 永远置空，靠 placeholder 提示
  * - 提示词 textarea：用户自定义值优先，否则用 prompts.js 默认值
  */
 function syncFormFromStore() {
   if (!formEl) return;
   const { settings } = getState();
-  setFieldValue('baseUrl', settings.baseUrl || '');
-  setFieldValue('model', settings.model || '');
-  setFieldValue('temperature', String(settings.temperature ?? 0.3));
 
-  // apiKey：永不回显明文
-  const apiKeyInput = /** @type {HTMLInputElement} */ (
-    formEl.elements.namedItem('apiKey')
-  );
-  apiKeyInput.value = '';
-  apiKeyInput.placeholder = settings.apiKey
-    ? '已配置（留空则不修改）'
-    : 'sk-...';
+  // ---- 文本识别模型 ----
+  const rec = settings.recognition || {};
+  setFieldValue('recognition.baseUrl', rec.baseUrl || '');
+  setFieldValue('recognition.model', rec.model || '');
+  setFieldValue('recognition.temperature', String(rec.temperature ?? 0.3));
+  // API Key 永不回显明文
+  syncApiKeyField('recognition.apiKey', rec.apiKey);
+
+  // ---- 文本阅读模型 ----
+  const rd = settings.reading || {};
+  setFieldValue('reading.baseUrl', rd.baseUrl || '');
+  setFieldValue('reading.model', rd.model || '');
+  setFieldValue('reading.temperature', String(rd.temperature ?? 0.3));
+  // API Key 永不回显明文
+  syncApiKeyField('reading.apiKey', rd.apiKey);
 
   // 提示词模板：自定义优先，无自定义则用默认值填充
   setFieldValue('promptSummarize', settings.promptSummarize || DEFAULT_TEMPLATES.promptSummarize);
   setFieldValue('promptExplainConcepts', settings.promptExplainConcepts || DEFAULT_TEMPLATES.promptExplainConcepts);
   setFieldValue('promptCritique', settings.promptCritique || DEFAULT_TEMPLATES.promptCritique);
   setFieldValue('promptChat', settings.promptChat || DEFAULT_TEMPLATES.promptChat);
+}
+
+/**
+ * 同步单个 apiKey 输入框：值永远置空，placeholder 根据是否已配置决定。
+ * @param {string} name - 表单字段名（如 "recognition.apiKey"）
+ * @param {string|undefined} storedKey - localStorage 中的 apiKey 值
+ */
+function syncApiKeyField(name, storedKey) {
+  if (!formEl) return;
+  const input = /** @type {HTMLInputElement} */ (
+    formEl.elements.namedItem(name)
+  );
+  if (!input) return;
+  input.value = '';
+  input.placeholder = storedKey
+    ? '已配置（留空则不修改）'
+    : 'sk-...';
 }
 
 /**
@@ -342,14 +398,46 @@ function resetToFirstTab() {
   if (firstContent instanceof HTMLElement) firstContent.hidden = false;
 }
 
+/**
+ * 从 FormData 中收集单个模型配置组（recognition 或 reading）。
+ * @param {FormData} fd
+ * @param {'recognition'|'reading'} prefix
+ * @returns {{ baseUrl: string, apiKey: string, model: string, temperature: number }}
+ */
+function collectModelConfig(fd, prefix) {
+  const baseUrl = String(fd.get(`${prefix}.baseUrl`) || '').trim();
+  const apiKeyRaw = String(fd.get(`${prefix}.apiKey`) || '');
+  const model = String(fd.get(`${prefix}.model`) || '').trim();
+  const temperatureRaw = String(fd.get(`${prefix}.temperature`) || '').trim();
+
+  return {
+    baseUrl,
+    apiKey: apiKeyRaw.trim(),
+    model,
+    temperature: Number(temperatureRaw),
+  };
+}
+
+/**
+ * 校验单个模型配置组的 temperature 范围。
+ * @param {{ temperature: number }} cfg
+ * @returns {string|null} 错误消息，null 表示通过
+ */
+function validateTemperature(cfg) {
+  if (!Number.isFinite(cfg.temperature) || cfg.temperature < 0 || cfg.temperature > 2) {
+    return '温度需为 0~2 之间的数字。';
+  }
+  return null;
+}
+
 /** 校验 + 收集 + 保存。 */
 async function save() {
   if (!formEl) return;
   const fd = new FormData(formEl);
-  const baseUrl = String(fd.get('baseUrl') || '').trim();
-  const model = String(fd.get('model') || '').trim();
-  const temperatureRaw = String(fd.get('temperature') || '').trim();
-  const apiKeyRaw = String(fd.get('apiKey') || '');
+
+  // 收集两组模型配置
+  const recCfg = collectModelConfig(fd, 'recognition');
+  const readCfg = collectModelConfig(fd, 'reading');
 
   // 提示词模板：trim 后保存；纯空白视为"使用内置默认"
   const promptSummarize = String(fd.get('promptSummarize') || '').trim();
@@ -357,35 +445,49 @@ async function save() {
   const promptCritique = String(fd.get('promptCritique') || '').trim();
   const promptChat = String(fd.get('promptChat') || '').trim();
 
-  if (!baseUrl) {
-    showError('请填写 Base URL。');
+  // 温度范围校验（两组各自校验）
+  const recTempErr = validateTemperature(recCfg);
+  if (recTempErr) {
+    showError(`文本识别模型：${recTempErr}`);
     return;
   }
-  if (!model) {
-    showError('请填写模型名。');
-    return;
-  }
-  const temperature = Number(temperatureRaw);
-  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
-    showError('温度需为 0~2 之间的数字。');
+  const readTempErr = validateTemperature(readCfg);
+  if (readTempErr) {
+    showError(`文本阅读模型：${readTempErr}`);
     return;
   }
 
   const current = getState().settings;
-  // apiKey：用户留空则保留原值，避免"打开面板就清空了 Key"
-  const apiKey = apiKeyRaw.trim() ? apiKeyRaw.trim() : current.apiKey;
+  const currentRec = current.recognition || {};
+  const currentReading = current.reading || {};
+
+  // 两组 apiKey 各自独立判断：留空则保留原值
+  /** @type {import('../config/defaults.js').ModelConfig} */
+  const recognition = {
+    baseUrl: recCfg.baseUrl,
+    apiKey: recCfg.apiKey ? recCfg.apiKey : currentRec.apiKey || '',
+    model: recCfg.model,
+    temperature: recCfg.temperature,
+  };
+
+  /** @type {import('../config/defaults.js').ModelConfig} */
+  const reading = {
+    baseUrl: readCfg.baseUrl,
+    apiKey: readCfg.apiKey ? readCfg.apiKey : currentReading.apiKey || '',
+    model: readCfg.model,
+    temperature: readCfg.temperature,
+  };
 
   /** @type {import('../config/defaults.js').Settings} */
   const newSettings = {
-    baseUrl,
-    apiKey,
-    model,
-    temperature,
+    recognition,
+    reading,
     promptSummarize,
     promptExplainConcepts,
     promptCritique,
     promptChat,
   };
+
   const ok = saveSettings(newSettings);
   if (!ok) {
     showError('保存失败：localStorage 写入异常（可能是隐私模式或配额超限）。');
