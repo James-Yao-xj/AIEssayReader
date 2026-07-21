@@ -1,17 +1,16 @@
 /* =========================================================
  * src/ui/textPane.js
  *
- * 中栏——提取文本展示 + 选中文本追问联动 + AI 视觉识别按钮。
+ * 中栏——提取文本展示 + 选中文本追问联动 + 识别模式切换开关。
  *
- * 暴露：initTextPane()（创建浮层按钮 + 绑定事件）、
- *       renderText(result)（把 extractText 结果渲染到中栏）、
- *       setVisionHandler(fn)（注册 AI 识别按钮回调）、
- *       setVisionProgress(current, total)（更新进度）、
- *       hideVisionProgress()（隐藏进度）。
+ * 暴露：initTextPane() / renderText(result) / renderVisionResult(result) /
+ *       setVisionHandler(fn) / setVisionProgress(current, total) /
+ *       hideVisionProgress().
  *
- * 追问联动（design.md §4）：
- *   用户选中一段文本 → 浮出"追问"按钮 → 点击后切到对话 tab
- *   → 通过 store.ui.quickAsk 通知 aiPane 自动发送。
+ * 模式切换：
+ *   pdf.js 提取（默认） ←→ AI 视觉识别
+ *   开关拨到 AI 侧时触发 visionHandler，识别完成后自动切换显示。
+ *   两种结果都缓存，来回切换无需重新识别。
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
@@ -24,22 +23,33 @@ let scrollEl = null;
 /** @type {string | null} */
 let selectedText = null;
 
-// AI 识别相关
+// ---- 模式切换 ----
 /** @type {(() => void) | null} */
 let visionHandler = null;
-/** @type {HTMLElement | null} */
-let visionBtn = null;
-/** @type {HTMLElement | null} */
-let visionCancelBtn = null;
-/** @type {HTMLElement | null} */
-let visionProgress = null;
 /** @type {AbortController | null} */
 let visionAbort = null;
 let visionRunning = false;
+/** @type {string} */
+let currentMode = 'pdfjs'; // 'pdfjs' | 'vision'
+
+// 缓存两种结果
+/** @type {{ meta: any, pages: Array<{pageNum:number, text:string}> } | null} */
+let cachedPdfJsResult = null;
+/** @type {{ meta: any, pages: Array<{pageNum:number, text:string}> } | null} */
+let cachedVisionResult = null;
+
+// DOM 引用（在 renderText 中创建，模式切换时复用）
+/** @type {HTMLElement | null} */
+let toggleTrack = null;
+/** @type {HTMLElement | null} */
+let toggleThumb = null;
+/** @type {HTMLElement | null} */
+let progressLabel = null;
+/** @type {HTMLElement | null} */
+let cancelLabel = null;
 
 /**
- * 初始化：创建浮层"追问"按钮（始终挂在 #text-scroll），绑定 selection 事件。
- * 幂等。
+ * 初始化：创建浮层"追问"按钮，绑定 selection 事件。幂等。
  */
 export function initTextPane() {
   if (askBtn) return;
@@ -55,7 +65,6 @@ export function initTextPane() {
     if (!selectedText) return;
     const text = selectedText.trim();
     if (!text) return;
-    // 构造一段含引用上下文的追问引导语
     const prompts = [
       `请帮我分析论文中的这一段内容：\n\n> ${sliceText(text, 800)}\n\n请解释这段的核心含义，并在合适的情况下给出批判性分析。`,
     ];
@@ -64,34 +73,28 @@ export function initTextPane() {
     });
     hideAskBtn();
   });
-  // 插入到 text-scroll 容器的兄弟位置或 body，用 fixed 定位
   document.body.appendChild(askBtn);
 
-  // 监听 selection 变化
   document.addEventListener('selectionchange', onSelectionChange);
   document.addEventListener('mousedown', (e) => {
-    // 点击浮层按钮以外的地方就隐藏
     if (askBtn && !askBtn.contains(/** @type {Node} */ (e.target))) {
       hideAskBtn();
     }
   });
 }
 
+// ---- 对外 API ----
+
 /**
- * 注册 AI 视觉识别按钮的回调。main.js 在加载 PDF 后调用此方法。
+ * 注册 AI 视觉识别的回调。main.js 调用。
  * @param {() => Promise<void>} fn
  */
 export function setVisionHandler(fn) {
   visionHandler = fn;
-  // 如果按钮已存在，确保可用
-  if (visionBtn) {
-    visionBtn.disabled = false;
-    visionBtn.textContent = 'AI 识别';
-  }
 }
 
 /**
- * 设置 AbortController（供 main.js 在开始识别前调用）。
+ * 设置 AbortController。
  * @param {AbortController} ctrl
  */
 export function setVisionAbort(ctrl) {
@@ -99,35 +102,31 @@ export function setVisionAbort(ctrl) {
 }
 
 /**
- * 更新 AI 识别进度显示。
+ * 更新 AI 识别进度。
  * @param {number} current
  * @param {number} total
  */
 export function setVisionProgress(current, total) {
   visionRunning = true;
-  if (visionBtn) {
-    visionBtn.textContent = `识别中 ${current}/${total}…`;
-    visionBtn.disabled = true;
+  if (progressLabel) {
+    progressLabel.textContent = `识别中 ${current}/${total}`;
+    progressLabel.hidden = false;
   }
-  if (visionCancelBtn) visionCancelBtn.hidden = false;
+  if (cancelLabel) cancelLabel.hidden = false;
 }
 
 /**
- * 隐藏 AI 识别进度（识别完成或取消后）。
+ * 隐藏 AI 识别进度。
  */
 export function hideVisionProgress() {
   visionRunning = false;
   visionAbort = null;
-  if (visionBtn) {
-    visionBtn.textContent = 'AI 识别';
-    visionBtn.disabled = false;
-  }
-  if (visionCancelBtn) visionCancelBtn.hidden = true;
-  if (visionProgress) visionProgress.hidden = true;
+  if (progressLabel) progressLabel.hidden = true;
+  if (cancelLabel) cancelLabel.hidden = true;
 }
 
 /**
- * 把 extractText 的结果渲染到中栏 #text-scroll。
+ * 渲染 pdf.js 提取结果（默认模式）。同时缓存结果供切换回时复用。
  * @param {{ meta: any, fullText: string, pages: Array<{pageNum:number, text:string}> }} result
  */
 export function renderText(result) {
@@ -135,8 +134,37 @@ export function renderText(result) {
     scrollEl = document.getElementById('text-scroll');
     if (!scrollEl) return;
   }
+  cachedPdfJsResult = { meta: result.meta, pages: result.pages || [] };
+  currentMode = 'pdfjs';
+  renderCurrent();
+}
+
+/**
+ * 渲染 AI 视觉识别结果。缓存结果并切换到 vision 模式。
+ * @param {{ meta: any, pages: Array<{pageNum:number, text:string}> }} result
+ */
+export function renderVisionResult(result) {
+  cachedVisionResult = { meta: result.meta, pages: result.pages || [] };
+  hideVisionProgress();
+  // 确保开关在 vision 侧
+  if (toggleTrack) toggleTrack.classList.add('text-mode-toggle--vision');
+  currentMode = 'vision';
+  renderCurrent();
+}
+
+// ---- 内部渲染 ----
+
+function renderCurrent() {
+  if (!scrollEl) return;
   scrollEl.innerHTML = '';
-  const pages = result.pages || [];
+
+  const pages = currentMode === 'vision' && cachedVisionResult
+    ? cachedVisionResult.pages
+    : cachedPdfJsResult?.pages || [];
+  const meta = (currentMode === 'vision' && cachedVisionResult
+    ? cachedVisionResult.meta
+    : cachedPdfJsResult?.meta) || {};
+
   if (pages.length === 0) {
     scrollEl.appendChild(
       el('div', { class: 'pane__empty' },
@@ -146,8 +174,8 @@ export function renderText(result) {
     );
     return;
   }
-  // 元信息 + AI 识别按钮
-  const meta = result.meta || {};
+
+  // 元信息 + 模式切换开关
   const metaDiv = el('div', { class: 'text-meta' });
   const parts = [];
   if (meta.title) parts.push(meta.title);
@@ -155,33 +183,9 @@ export function renderText(result) {
   if (parts.length) {
     metaDiv.appendChild(document.createTextNode(parts.join(' · ')));
   }
-  // AI 识别按钮
-  visionBtn = document.createElement('button');
-  visionBtn.className = 'ai-btn ai-btn--primary text-vision-btn';
-  visionBtn.textContent = 'AI 识别';
-  visionBtn.title = '用 AI 视觉模型精确识别论文文字和公式（需要支持 vision 的模型）';
-  visionBtn.addEventListener('click', () => {
-    if (visionRunning) return;
-    if (!visionHandler) {
-      alert('请先在设置中配置 API Key 和模型。');
-      return;
-    }
-    visionHandler();
-  });
-  metaDiv.appendChild(visionBtn);
 
-  // 取消按钮（初始隐藏）
-  visionCancelBtn = document.createElement('button');
-  visionCancelBtn.className = 'ai-btn ai-btn--ghost text-vision-cancel';
-  visionCancelBtn.textContent = '取消';
-  visionCancelBtn.hidden = true;
-  visionCancelBtn.addEventListener('click', () => {
-    if (visionAbort) {
-      visionAbort.abort();
-    }
-  });
-  metaDiv.appendChild(visionCancelBtn);
-
+  // 模式切换开关
+  metaDiv.appendChild(buildToggle());
   scrollEl.appendChild(metaDiv);
 
   // 分页 — 每页正文走 marked+KaTeX 渲染
@@ -198,6 +202,72 @@ export function renderText(result) {
   scrollEl.appendChild(frag);
 }
 
+// ---- 模式切换开关 ----
+
+function buildToggle() {
+  const wrapper = el('span', { class: 'text-mode-toggle-wrapper' });
+
+  // pdf.js 标签
+  const leftLabel = el('span', { class: 'text-mode-label' }, 'pdf.js');
+
+  // 滑动轨道
+  toggleTrack = el('span', { class: 'text-mode-toggle' });
+  if (currentMode === 'vision') toggleTrack.classList.add('text-mode-toggle--vision');
+  toggleThumb = el('span', { class: 'text-mode-toggle__thumb' });
+  toggleTrack.appendChild(toggleThumb);
+  toggleTrack.addEventListener('click', () => onToggleClick());
+
+  // AI 标签
+  const rightLabel = el('span', { class: 'text-mode-label' }, 'AI');
+
+  // 进度文字
+  progressLabel = el('span', { class: 'text-mode-progress' });
+  progressLabel.hidden = true;
+
+  // 取消按钮
+  cancelLabel = el('span', { class: 'text-mode-cancel' });
+  cancelLabel.textContent = '✕';
+  cancelLabel.hidden = true;
+  cancelLabel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (visionAbort) visionAbort.abort();
+  });
+
+  wrapper.appendChild(leftLabel);
+  wrapper.appendChild(toggleTrack);
+  wrapper.appendChild(rightLabel);
+  wrapper.appendChild(progressLabel);
+  wrapper.appendChild(cancelLabel);
+  return wrapper;
+}
+
+function onToggleClick() {
+  if (visionRunning) return;
+
+  if (currentMode === 'pdfjs') {
+    // 切换到 AI 模式
+    if (cachedVisionResult) {
+      // 已经识别过，直接切换
+      currentMode = 'vision';
+      if (toggleTrack) toggleTrack.classList.add('text-mode-toggle--vision');
+      renderCurrent();
+    } else if (visionHandler) {
+      // 首次切换，触发识别
+      toggleTrack?.classList.add('text-mode-toggle--vision');
+      visionHandler();
+    } else {
+      alert('请先在设置中配置 API Key 和支持 vision 的模型。');
+    }
+  } else {
+    // 切换回 pdf.js
+    currentMode = 'pdfjs';
+    if (toggleTrack) toggleTrack.classList.remove('text-mode-toggle--vision');
+    hideVisionProgress();
+    if (visionAbort) { visionAbort.abort(); visionAbort = null; }
+    renderCurrent();
+  }
+}
+
 // =========================================================
 // 内部：selection → 浮层按钮
 // =========================================================
@@ -205,12 +275,8 @@ export function renderText(result) {
 function onSelectionChange() {
   if (!askBtn || !scrollEl) return;
   const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) {
-    // 短暂延迟再隐藏，避免快速双击选中时闪烁
-    return;
-  }
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
   const range = sel.getRangeAt(0);
-  // 必须在中栏文本区（#text-scroll 内）才显示追问按钮
   if (!scrollEl.contains(range.commonAncestorContainer)) {
     hideAskBtn();
     return;
@@ -222,13 +288,11 @@ function onSelectionChange() {
   }
   selectedText = text;
 
-  // 把按钮定位到选中文字末尾附近
   const rect = range.getBoundingClientRect();
   const btnW = 64;
   const btnH = 32;
   let top = rect.bottom + 4;
   let left = rect.right - btnW / 2;
-  // 边界修正
   if (top + btnH > window.innerHeight - 8) top = rect.top - btnH - 4;
   if (left < 8) left = 8;
   if (left + btnW > window.innerWidth - 8) left = window.innerWidth - btnW - 8;
@@ -247,23 +311,12 @@ function hideAskBtn() {
 // 工具
 // =========================================================
 
-/**
- * 截断文本（保留前后各一部分，中间加省略号）。
- * @param {string} text
- * @param {number} maxLen
- */
 function sliceText(text, maxLen) {
   if (text.length <= maxLen) return text;
   const half = Math.floor(maxLen / 2);
   return text.slice(0, half) + '\n…[省略中间]…\n' + text.slice(-half);
 }
 
-/**
- * @param {string} tag
- * @param {Record<string,string>} attrs
- * @param  {...(string|Node)} children
- * @returns {HTMLElement}
- */
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {

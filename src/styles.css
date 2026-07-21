@@ -505,18 +505,71 @@ body {
   border-left: 3px solid #0d6efd;
 }
 
-.text-vision-btn {
+/* ---- 模式切换开关 ---- */
+.text-mode-toggle-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-left: 12px;
-  font-size: 12px;
-  padding: 2px 10px;
   vertical-align: middle;
 }
 
-.text-vision-cancel {
-  margin-left: 8px;
-  font-size: 12px;
-  padding: 2px 10px;
-  vertical-align: middle;
+.text-mode-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6e7681;
+  user-select: none;
+}
+
+.text-mode-toggle {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 20px;
+  background: #c4c9d1;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.text-mode-toggle--vision {
+  background: #0d6efd;
+}
+
+.text-mode-toggle__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15);
+}
+
+.text-mode-toggle--vision .text-mode-toggle__thumb {
+  left: 22px;
+}
+
+.text-mode-progress {
+  font-size: 11px;
+  color: #0d6efd;
+  font-weight: 500;
+}
+
+.text-mode-cancel {
+  font-size: 14px;
+  color: #d73a49;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+  user-select: none;
+}
+
+.text-mode-cancel:hover {
+  color: #b32a38;
 }
 
 .text-page__head {

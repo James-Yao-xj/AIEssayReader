@@ -26,7 +26,7 @@ import { getState, setState, subscribe } from './state/store.js';
 import { loadSettings } from './config/storage.js';
 import { initSettings, openSettings } from './ui/settings.js';
 import { initAiPane } from './ui/aiPane.js';
-import { initTextPane, renderText, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
+import { initTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
 import { initPaneResize } from './ui/paneResize.js';
 import { extractWithVision } from './pdf/vision.js';
 import { describeErr } from './utils/errors.js';
@@ -230,8 +230,8 @@ function setupVisionHandler(file) {
         },
       });
 
-      // 更新中栏显示
-      renderText(result);
+      // 更新中栏显示（切换到 AI 模式）
+      renderVisionResult(result);
       // 更新 store.paper（AI 分析将使用新结果）
       setState({
         paper: {
@@ -242,7 +242,6 @@ function setupVisionHandler(file) {
         },
       });
 
-      hideVisionProgress();
       const meta = result.meta || {};
       const titlePart = meta.title ? `《${meta.title}》` : file.name;
       hideStatus();
