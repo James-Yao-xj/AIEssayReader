@@ -1190,3 +1190,471 @@ body {
     width: 98vw;
   }
 }
+
+/* =========================================================
+   黑夜模式（data-theme="dark"）
+   ========================================================= */
+
+[data-theme="dark"] html,
+[data-theme="dark"] body {
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
+/* ---- 顶部条 ---- */
+[data-theme="dark"] .app-header {
+  background: #16213e;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .app-header__hint {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .app-header__key-hint {
+  color: #eac54f;
+  background: #3a2e0a;
+  border-color: #6b4f1a;
+}
+
+[data-theme="dark"] .app-header__btn {
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .app-header__btn:hover {
+  background: #2a2a4a;
+}
+
+[data-theme="dark"] .app-header__btn:focus-visible {
+  outline-color: #4a9eff88;
+}
+
+/* ---- 设置 modal ---- */
+[data-theme="dark"] .settings-modal__backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .settings-modal__panel {
+  background: #16213e;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .settings-modal__header {
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .settings-modal__header h2 {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-modal__close {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .settings-modal__close:hover {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-modal__tabs {
+  background: #0f0f23;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .settings-modal__tab {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .settings-modal__tab:hover {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-modal__tab--active {
+  color: #4a9eff;
+}
+
+[data-theme="dark"] .settings-modal__form {
+  /* no background change needed */
+}
+
+[data-theme="dark"] .settings-fieldset {
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-fieldset__legend {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-fieldset__desc {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .settings-field__label {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-field input {
+  background: #1e1e3a;
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-field input:focus {
+  outline-color: #4a9eff44;
+  border-color: #4a9eff;
+}
+
+[data-theme="dark"] .settings-field textarea {
+  background: #1e1e3a;
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-field textarea:focus {
+  outline-color: #4a9eff44;
+  border-color: #4a9eff;
+}
+
+[data-theme="dark"] .settings-field__reset {
+  color: #a0a0b0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-field__reset:hover {
+  color: #e0e0e0;
+  background: #2a2a4a;
+  border-color: #5a5a7a;
+}
+
+[data-theme="dark"] .settings-field__global-notice {
+  color: #a0a0b0;
+  background: #1e1e3a;
+  border-left-color: #4a9eff;
+}
+
+[data-theme="dark"] .settings-field__preview {
+  background: #0f0f23;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-field__preview-head {
+  color: #a0a0b0;
+  background: #1e1e3a;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .settings-field__preview-content::-webkit-scrollbar-thumb {
+  background: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-field__preview-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-theme="dark"] .settings-modal__error {
+  color: #ff8b8b;
+  background: #2a1515;
+  border-color: #5a2a2a;
+}
+
+[data-theme="dark"] .settings-modal__actions button:not(.primary) {
+  background: #1e1e3a;
+  border-color: #3a3a5a;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-modal__actions button:not(.primary):hover {
+  background: #2a2a4a;
+}
+
+/* ---- 下载对话框 ---- */
+[data-theme="dark"] .download-dialog-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .download-dialog {
+  background: #16213e;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .download-dialog__header {
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .download-dialog__header h3 {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .download-dialog__close {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .download-dialog__close:hover {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .download-dialog__label {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .download-dialog__radio {
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .download-dialog__radio:has(input:checked) {
+  border-color: #4a9eff;
+  background: #1a2a4a;
+}
+
+[data-theme="dark"] .download-dialog__radio-text small {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .download-dialog__filename-input {
+  background: #1e1e3a;
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .download-dialog__filename-input:focus {
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+[data-theme="dark"] .download-dialog__actions {
+  border-top-color: #2a2a4a;
+}
+
+/* ---- 三栏面板 ---- */
+[data-theme="dark"] .pane {
+  background: #16213e;
+  border-right-color: #2a2a4a;
+}
+
+[data-theme="dark"] .pane--pdf {
+  background: #3a3a4a;
+}
+
+[data-theme="dark"] .pane--ai {
+  background: #0f0f23;
+}
+
+/* ---- 分隔条 ---- */
+[data-theme="dark"] .pane-gutter {
+  background: #2a2a4a;
+}
+
+[data-theme="dark"] .pane-gutter:hover {
+  background: #4a9eff;
+}
+
+[data-theme="dark"] .pane-gutter--dragging {
+  background: #3a7eef;
+}
+
+/* ---- 空态占位 ---- */
+[data-theme="dark"] .pane__empty {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .pane--pdf .pane__empty {
+  color: #8a8a9a;
+}
+
+/* ---- 中栏文本 ---- */
+[data-theme="dark"] .text-meta {
+  color: #e0e0e0;
+  background: #1e1e3a;
+  border-left-color: #4a9eff;
+}
+
+[data-theme="dark"] .text-mode-label {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .text-mode-toggle {
+  background: #3a3a5a;
+}
+
+[data-theme="dark"] .text-mode-toggle--vision {
+  background: #4a9eff;
+}
+
+[data-theme="dark"] .text-mode-progress {
+  color: #4a9eff;
+}
+
+[data-theme="dark"] .text-page__head {
+  color: #a0a0b0;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .text-page__body {
+  color: #e0e0e0;
+}
+
+/* ---- 拖拽遮罩 ---- */
+[data-theme="dark"] .dropzone {
+  background: rgba(74, 158, 255, 0.12);
+  border-color: #4a9eff;
+}
+
+[data-theme="dark"] .dropzone__inner {
+  background: #16213e;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .dropzone__title {
+  color: #4a9eff;
+}
+
+[data-theme="dark"] .dropzone__desc {
+  color: #a0a0b0;
+}
+
+/* ---- 追问浮层 ---- */
+[data-theme="dark"] .text-ask-btn {
+  background: #4a9eff;
+}
+
+[data-theme="dark"] .text-ask-btn:hover {
+  background: #3a7eef;
+}
+
+/* ---- 底部状态条 ---- */
+[data-theme="dark"] .status-bar {
+  background: rgba(30, 30, 50, 0.95);
+  color: #e0e0e0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ---- AI 面板 ---- */
+[data-theme="dark"] .ai-tabs {
+  background: #0f0f23;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .ai-tab {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .ai-tab:hover {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .ai-tab--active {
+  color: #4a9eff;
+}
+
+[data-theme="dark"] .ai-section__title {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .ai-section__desc {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .ai-btn--primary {
+  background: #4a9eff;
+  border-color: #4a9eff;
+}
+
+[data-theme="dark"] .ai-btn--primary:hover:not(:disabled) {
+  background: #3a7eef;
+}
+
+[data-theme="dark"] .ai-btn--ghost {
+  background: #1e1e3a;
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .ai-btn--ghost:hover:not(:disabled) {
+  background: #2a2a4a;
+}
+
+[data-theme="dark"] .ai-error {
+  color: #ff8b8b;
+  background: #2a1515;
+  border-color: #5a2a2a;
+}
+
+[data-theme="dark"] .ai-placeholder {
+  color: #6a6a7a;
+}
+
+/* ---- Markdown 排版 ---- */
+[data-theme="dark"] .md-body h2 {
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .md-body code {
+  background: #2a2a4a;
+  color: #e0c080;
+}
+
+[data-theme="dark"] .md-body pre {
+  background: #0d0d1a;
+  color: #d0d0e0;
+}
+
+[data-theme="dark"] .md-body pre code {
+  color: #d0d0e0;
+}
+
+[data-theme="dark"] .md-body blockquote {
+  background: #1e1e3a;
+  color: #b0b0c0;
+  border-left-color: #4a9eff;
+}
+
+[data-theme="dark"] .md-body table {
+  /* table itself doesn't need bg change */
+}
+
+[data-theme="dark"] .md-body th,
+[data-theme="dark"] .md-body td {
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .md-body th {
+  background: #1e1e3a;
+}
+
+[data-theme="dark"] .md-body a {
+  color: #4a9eff;
+}
+
+/* ---- 对话 ---- */
+[data-theme="dark"] .chat-bubble--user {
+  background: #4a9eff;
+}
+
+[data-theme="dark"] .chat-bubble--assistant {
+  background: #2a2a4a;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .chat-composer {
+  border-top-color: #2a2a4a;
+}
+
+[data-theme="dark"] .chat-input {
+  background: #1e1e3a;
+  color: #e0e0e0;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .chat-input:focus {
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.15);
+}
+
+[data-theme="dark"] .settings-field__hint {
+  color: #8a8a9a;
+}
+
+/* ---- 响应式：窄屏 ---- */
+[data-theme="dark"] .pane {
+  border-bottom-color: #2a2a4a;
+}
