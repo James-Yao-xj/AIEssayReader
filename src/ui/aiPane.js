@@ -10,6 +10,7 @@
  *   · 输入法合成（composition）期间 Enter 不触发发送
  * - 流式期间禁用按钮、显示停止按钮（AbortController.abort()）
  * - 错误（未填 Key/未加载论文/API 错/取消）捕获后在当前 tab 内清晰展示，绝不静默
+ * - 保存按钮：将 AI 结果/对话以 Markdown 文件下载到本地
  *
  * 暴露：initAiPane()——创建 DOM、绑定事件、订阅 store。幂等。
  * ========================================================= */
@@ -31,6 +32,118 @@ let root = null;
 
 /** @type {AbortController | null} */
 let currentController = null;
+
+/** 各分析 tab 最近一次生成的原始 markdown 文本（用于保存）。 */
+const savedResults = /** @type {Record<string, string>} */ ({
+  summarize: '',
+  explainConcepts: '',
+  critique: '',
+});
+
+/** Tab id → 中文短标签（用于文件名）。 */
+const TAB_LABEL = /** @type {Record<string, string>} */ ({
+  summarize: '总结',
+  explainConcepts: '概念解释',
+  critique: '质疑',
+  chat: '对话',
+});
+
+// ---------- 保存/下载工具 ----------
+
+/**
+ * 生成合法的下载文件名。
+ * @param {string} paperTitle 论文标题（可能含非法字符）
+ * @param {string} tag 类型标签（如"总结""质疑""对话"）
+ * @returns {string}
+ */
+function makeFilename(paperTitle, tag) {
+  const safe = (paperTitle || '未命名论文').replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 80);
+  const date = new Date().toISOString().slice(0, 10);
+  return `${safe}_${tag}_${date}.md`;
+}
+
+/**
+ * 触发浏览器下载。
+ * @param {string} content 文件内容
+ * @param {string} filename 文件名
+ */
+function downloadFile(content, filename) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * 构建分析 Tab 的 markdown 文件内容。
+ * @param {'summarize' | 'explainConcepts' | 'critique'} task
+ * @param {string} rawText AI 原始输出
+ * @returns {string}
+ */
+function buildAnalyzeMarkdown(task, rawText) {
+  const { paper } = getState();
+  const title = paper?.meta?.title || paper?.name || '未命名论文';
+  const now = new Date().toLocaleString('zh-CN');
+  const tag = TAB_LABEL[task] || task;
+  return [
+    `# ${title}`,
+    '',
+    `> **${tag}**  |  生成时间：${now}`,
+    '',
+    '---',
+    '',
+    (rawText || '').trim(),
+  ].join('\n');
+}
+
+/**
+ * 构建对话记录的 markdown 文件内容。
+ * @returns {string}
+ */
+function buildChatMarkdown() {
+  const { paper, messages } = getState();
+  const title = paper?.meta?.title || paper?.name || '未命名论文';
+  const now = new Date().toLocaleString('zh-CN');
+  const lines = [
+    `# ${title}`,
+    '',
+    `> **对话记录**  |  导出时间：${now}`,
+    '',
+    '---',
+    '',
+  ];
+  for (const m of messages) {
+    const roleLabel = m.role === 'user' ? '**🧑 你**' : '**🤖 AI**';
+    lines.push(`### ${roleLabel}`);
+    lines.push('');
+    lines.push((m.content || '').trim());
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+/** 同步分析 Tab 保存按钮状态。 */
+function syncSaveButton(task) {
+  if (!root) return;
+  const btn = root.querySelector(`[data-action="save"][data-task="${task}"]`);
+  if (btn instanceof HTMLButtonElement) {
+    btn.disabled = !savedResults[task] || getState().ui.busy;
+  }
+}
+
+/** 同步对话 Tab 保存按钮状态。 */
+function syncChatSaveButton() {
+  if (!root) return;
+  const btn = root.querySelector('[data-action="save-chat"]');
+  if (btn instanceof HTMLButtonElement) {
+    btn.disabled = getState().messages.length === 0 || getState().ui.busy;
+  }
+}
 
 /**
  * 初始化右栏 AI 面板。幂等。
@@ -68,10 +181,11 @@ export function initAiPane() {
   bindAnalyzeButtons();
   bindChat();
 
-  // 订阅 store：tab 高亮 + busy 态同步 + 追问联动
+  // 订阅 store：tab 高亮 + busy 态同步 + 追问联动 + 保存按钮状态
   subscribe((s) => {
     syncTabs(s.ui.activeTab);
     syncBusy(s.ui.busy);
+    syncChatSaveButton();
     // 中栏追问联动：textPane 设置 quickAsk + 切到 chat tab
     if (s.ui.quickAsk && s.ui.activeTab === 'chat' && !s.ui.busy) {
       const text = s.ui.quickAsk;
@@ -90,6 +204,7 @@ export function initAiPane() {
   });
   syncTabs(getState().ui.activeTab);
   syncBusy(getState().ui.busy);
+  syncChatSaveButton();
 }
 
 /**
@@ -105,6 +220,8 @@ function renderAnalyzeTab(id, label, desc) {
         <div class="ai-section__actions">
           <button type="button" class="ai-btn ai-btn--primary"
             data-action="generate" data-task="${id}">生成</button>
+          <button type="button" class="ai-btn ai-btn--ghost"
+            data-action="save" data-task="${id}" disabled>保存</button>
           <button type="button" class="ai-btn ai-btn--ghost"
             data-action="stop" hidden>停止</button>
         </div>
@@ -127,6 +244,8 @@ function renderChatTab() {
         <textarea class="chat-input" data-chat-input rows="2"
           placeholder="基于当前论文提问…（Enter 发送 · Shift+Enter 换行）"></textarea>
         <div class="chat-composer__actions">
+          <button type="button" class="ai-btn ai-btn--ghost"
+            data-action="save-chat" disabled>保存对话</button>
           <button type="button" class="ai-btn ai-btn--ghost"
             data-action="stop" hidden>停止</button>
           <button type="button" class="ai-btn ai-btn--primary"
@@ -190,6 +309,12 @@ function syncBusy(busy) {
   root.querySelectorAll('[data-action="send"]').forEach((btn) => {
     /** @type {HTMLButtonElement} */ (btn).disabled = busy;
   });
+  root.querySelectorAll('[data-action="save"]').forEach((btn) => {
+    /** @type {HTMLButtonElement} */ (btn).disabled = busy || !savedResults[/** @type {HTMLElement} */ (btn).dataset.task || ''];
+  });
+  root.querySelectorAll('[data-action="save-chat"]').forEach((btn) => {
+    /** @type {HTMLButtonElement} */ (btn).disabled = busy || getState().messages.length === 0;
+  });
   root.querySelectorAll('[data-action="stop"]').forEach((btn) => {
     /** @type {HTMLElement} */ (btn).hidden = !busy;
   });
@@ -214,6 +339,34 @@ function bindAnalyzeButtons() {
   // 所有停止按钮共用同一个 abort 入口
   root.querySelectorAll('[data-action="stop"]').forEach((btn) => {
     btn.addEventListener('click', () => abortCurrent());
+  });
+  // 分析 Tab 保存按钮
+  root.querySelectorAll('[data-action="save"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const el = /** @type {HTMLElement} */ (e.currentTarget);
+      const task = el.dataset.task;
+      if (!task || !savedResults[task]) return;
+      const content = buildAnalyzeMarkdown(
+        /** @type {'summarize' | 'explainConcepts' | 'critique'} */ (task),
+        savedResults[task],
+      );
+      const tag = TAB_LABEL[task] || task;
+      const filename = makeFilename(
+        getState().paper?.meta?.title || getState().paper?.name || '',
+        tag,
+      );
+      downloadFile(content, filename);
+    });
+  });
+  // 对话 Tab 保存按钮
+  const saveChatBtn = root.querySelector('[data-action="save-chat"]');
+  saveChatBtn?.addEventListener('click', () => {
+    const content = buildChatMarkdown();
+    const filename = makeFilename(
+      getState().paper?.meta?.title || getState().paper?.name || '',
+      '对话',
+    );
+    downloadFile(content, filename);
   });
 }
 
@@ -256,11 +409,14 @@ async function runAnalyze(task) {
       renderer.push(chunk);
     }
     renderer.finalize();
+    savedResults[task] = renderer.getText();
   } catch (err) {
     // 已收到的部分先 finalize 渲染好，再在错误区显示原因
     renderer.finalize();
+    savedResults[task] = renderer.getText();
     showError(errorEl, describeErr(err));
   } finally {
+    syncSaveButton(task);
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
   }
@@ -333,6 +489,7 @@ async function sendChat() {
   } finally {
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
+    syncChatSaveButton();
   }
 }
 
@@ -420,4 +577,3 @@ function hideError(el) {
   el.textContent = '';
   el.hidden = true;
 }
-
