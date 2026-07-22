@@ -26,8 +26,9 @@ import { getState, setState, subscribe } from './state/store.js';
 import { loadSettings } from './config/storage.js';
 import { initSettings, openSettings } from './ui/settings.js';
 import { initAiPane } from './ui/aiPane.js';
-import { initTextPane, renderText } from './ui/textPane.js';
+import { initTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
 import { initPaneResize } from './ui/paneResize.js';
+import { extractWithVision } from './pdf/vision.js';
 import { describeErr } from './utils/errors.js';
 
 // ---- DOM 引用 ----
@@ -60,6 +61,8 @@ const keyHint = /** @type {HTMLElement | null} */ (
 // ---- 当前渲染状态（用于切换文件时清理）----
 /** @type {{ cleanup: () => void } | null} */
 let currentPdfHandle = null;
+/** @type {AbortController | null} */
+let activeVisionAbort = null;
 
 // =========================================================
 // 状态条
@@ -116,7 +119,7 @@ async function loadPdf(file) {
     return;
   }
 
-  // 清理上一个 PDF
+  // 清理上一个 PDF（含正在进行的 AI 视觉识别）
   if (currentPdfHandle) {
     try {
       currentPdfHandle.cleanup();
@@ -124,6 +127,11 @@ async function loadPdf(file) {
       /* ignore */
     }
     currentPdfHandle = null;
+  }
+  // 如果 AI 视觉识别正在运行，取消它（避免旧结果覆盖新 PDF）
+  if (activeVisionAbort) {
+    activeVisionAbort.abort();
+    activeVisionAbort = null;
   }
   // 清空中栏
   textScroll.innerHTML = '';
@@ -168,6 +176,8 @@ async function loadPdf(file) {
             pages: result.pages || [],
           },
         });
+        // 注册 AI 视觉识别按钮回调
+        setupVisionHandler(file);
         const meta = result.meta || {};
         const titlePart = meta.title ? `《${meta.title}》` : file.name;
         hideStatus();
@@ -193,6 +203,67 @@ async function loadPdf(file) {
  */
 function renderTextToMiddle(result) {
   renderText(result);
+}
+
+/**
+ * 注册 AI 视觉识别按钮的回调。每个 PDF 加载后调用一次。
+ * @param {File} file
+ */
+function setupVisionHandler(file) {
+  setVisionHandler(async () => {
+    // 防御：同一时刻只有一个 vision 任务
+    if (activeVisionAbort) {
+      activeVisionAbort.abort();
+    }
+    const ctrl = new AbortController();
+    activeVisionAbort = ctrl;
+    setVisionAbort(ctrl);
+
+    try {
+      showStatus('info', 'AI 视觉识别中…', 0);
+
+      const result = await extractWithVision(file, {
+        signal: ctrl.signal,
+        onProgress: (current, total) => {
+          setVisionProgress(current, total);
+          showStatus('info', `AI 识别中 ${current}/${total} 页…`, 0);
+        },
+      });
+
+      // 更新中栏显示（切换到 AI 模式）
+      renderVisionResult(result);
+      // 更新 store.paper（AI 分析将使用新结果）
+      setState({
+        paper: {
+          name: file.name,
+          meta: result.meta || { nPages: result.pages?.length || 0 },
+          fullText: result.fullText,
+          pages: result.pages || [],
+        },
+      });
+
+      const meta = result.meta || {};
+      const titlePart = meta.title ? `《${meta.title}》` : file.name;
+      hideStatus();
+      showStatus(
+        'success',
+        `AI 识别完成：${titlePart}（${meta.nPages ?? '?'} 页，${result.fullText.length} 字符）`,
+        5000,
+      );
+    } catch (err) {
+      hideVisionProgress();
+      if (err instanceof Error && err.name === 'AbortError') {
+        showStatus('info', 'AI 识别已取消', 3000);
+      } else {
+        console.error('[vision] 识别失败：', err);
+        showStatus('error', `AI 识别失败：${describeErr(err)}`);
+      }
+    } finally {
+      if (activeVisionAbort === ctrl) {
+        activeVisionAbort = null;
+      }
+    }
+  });
 }
 
 /**
@@ -332,10 +403,13 @@ setState({ settings: loadSettings() });
 // 3) 顶栏"设置"按钮 → 打开设置面板
 btnSettings?.addEventListener('click', () => openSettings());
 
-// 4) 订阅 settings 变化：未填 API Key 时显示徽标提示
+// 4) 订阅 settings 变化：两组 API Key 均未填时显示徽标提示
 function syncKeyHint(settings) {
   if (!keyHint) return;
-  const hasKey = !!settings?.apiKey?.trim();
+  const hasRecKey = !!(settings?.recognition?.apiKey?.trim());
+  const hasReadKey = !!(settings?.reading?.apiKey?.trim());
+  // 只要有一组配置了 API Key 就隐藏提示（用户可能只用其中一个功能）
+  const hasKey = hasRecKey || hasReadKey;
   keyHint.hidden = hasKey;
   if (!hasKey) {
     keyHint.textContent = '未配置 API Key';

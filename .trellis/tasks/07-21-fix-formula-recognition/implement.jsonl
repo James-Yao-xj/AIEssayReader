@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/07-21-fix-formula-recognition/prd.md", "reason": "Requirements and acceptance criteria for the formula recognition fix"}
+{"file": ".trellis/tasks/07-21-fix-formula-recognition/design.md", "reason": "Technical design: algorithm pseudocode, data flow, edge cases"}
+{"file": ".trellis/tasks/07-21-fix-formula-recognition/implement.md", "reason": "Ordered implementation checklist and file change list"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend architecture overview and dependency direction rules"}
+{"file": ".trellis/spec/frontend/project-patterns.md", "reason": "Core patterns: KaTeX rendering, store pub/sub, streaming throttle, native ES modules"}
