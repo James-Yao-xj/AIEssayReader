@@ -424,6 +424,20 @@ function syncKeyHint(settings) {
 subscribe((s) => syncKeyHint(s.settings));
 syncKeyHint(getState().settings);
 
+// 5) 应用阅读区域字体大小 CSS 变量
+/**
+ * 根据 settings.fontSize 设置 --reader-font-size CSS 自定义属性。
+ * @param {import('./config/defaults.js').Settings} settings
+ */
+function applyFontSize(settings) {
+  const size = settings?.fontSize;
+  if (typeof size === 'number' && Number.isFinite(size) && size >= 12 && size <= 24) {
+    document.documentElement.style.setProperty('--reader-font-size', `${size}px`);
+  }
+}
+applyFontSize(getState().settings);
+subscribe((s) => applyFontSize(s.settings));
+
 console.info(
   '[app] AI 论文阅读插件已就绪。' +
     '拖入 PDF 或按 Ctrl/Cmd+O 打开；右上角"设置"填 Base URL/API Key。',

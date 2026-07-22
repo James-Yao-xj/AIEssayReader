@@ -71,3 +71,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 字体大小可配置设置
+
+**Date**: 2026-07-22
+**Task**: 字体大小可配置设置
+**Branch**: `dev/Font-Size-Changeable`
+
+### Summary
+
+在设置面板中添加字体大小配置选项（12-24px），通过CSS变量实时应用到中栏文本区、AI结果区和对话气泡，设置持久化到localStorage。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5095235` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
