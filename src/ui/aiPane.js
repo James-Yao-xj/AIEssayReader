@@ -10,7 +10,7 @@
  *   · 输入法合成（composition）期间 Enter 不触发发送
  * - 流式期间禁用按钮、显示停止按钮（AbortController.abort()）
  * - 错误（未填 Key/未加载论文/API 错/取消）捕获后在当前 tab 内清晰展示，绝不静默
- * - 保存按钮：将 AI 结果/对话以 Markdown 文件下载到本地
+ * - 保存按钮：弹出下载选项对话框 → 选择格式(.md / .pdf) + 文件名 + 保存路径
  *
  * 暴露：initAiPane()——创建 DOM、绑定事件、订阅 store。幂等。
  * ========================================================= */
@@ -51,7 +51,7 @@ const TAB_LABEL = /** @type {Record<string, string>} */ ({
 // ---------- 保存/下载工具 ----------
 
 /**
- * 生成合法的下载文件名。
+ * 生成合法的下载文件名（不含扩展名）。
  * @param {string} paperTitle 论文标题（可能含非法字符）
  * @param {string} tag 类型标签（如"总结""质疑""对话"）
  * @returns {string}
@@ -59,16 +59,18 @@ const TAB_LABEL = /** @type {Record<string, string>} */ ({
 function makeFilename(paperTitle, tag) {
   const safe = (paperTitle || '未命名论文').replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 80);
   const date = new Date().toISOString().slice(0, 10);
-  return `${safe}_${tag}_${date}.md`;
+  return `${safe}_${tag}_${date}`;
 }
 
 /**
- * 触发浏览器下载。
+ * 触发浏览器直接下载（Blob 方式，不选路径）。
  * @param {string} content 文件内容
  * @param {string} filename 文件名
+ * @param {string} [mimeType]
  */
-function downloadFile(content, filename) {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+function downloadFile(content, filename, mimeType) {
+  const mime = mimeType || 'text/markdown;charset=utf-8';
+  const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -77,6 +79,133 @@ function downloadFile(content, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * 使用 File System Access API 保存到用户选择的路径。
+ * 不可用时回退到直接下载。
+ * @param {string} content
+ * @param {string} filename
+ * @param {string} mimeType
+ * @returns {Promise<boolean>} 是否成功（用户取消返回 false）
+ */
+async function saveViaFileSystemAPI(content, filename, mimeType) {
+  try {
+    if (!window.showSaveFilePicker) {
+      downloadFile(content, filename, mimeType);
+      return true;
+    }
+    const ext = filename.split('.').pop() || 'md';
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [{
+        description: ext === 'pdf' ? 'PDF 文档' : 'Markdown 文档',
+        accept: ext === 'pdf'
+          ? { 'application/pdf': ['.pdf'] }
+          : { 'text/markdown': ['.md'] },
+      }],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    return true;
+  } catch (err) {
+    // AbortError = 用户点了取消
+    if (/** @type {DOMException} */ (err).name === 'AbortError') return false;
+    // 其他错误回退到直接下载
+    downloadFile(content, filename, mimeType);
+    return true;
+  }
+}
+
+/**
+ * 构建 markdown → 完整 HTML 文档（供打印/PDF 使用）。
+ * 复用 renderMarkdown 以得到正确的 KaTeX 渲染结果。
+ * @param {string} markdownContent
+ * @returns {string} 完整的 HTML 文档字符串
+ */
+function buildPrintHtml(markdownContent) {
+  const temp = document.createElement('div');
+  renderMarkdown(temp, markdownContent || '');
+  const bodyHtml = temp.innerHTML;
+
+  // 收集当前页所有 <style>（含 KaTeX 字体/样式），保证打印窗口排版一致
+  const styles = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.outerHTML)
+    .join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 阅读导出</title>
+  ${styles}
+  <style>
+    body {
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.8;
+      color: #1f2328;
+    }
+    @media print {
+      body { margin: 0; padding: 20px; }
+    }
+  </style>
+</head>
+<body>${bodyHtml}</body>
+</html>`;
+}
+
+/**
+ * 执行实际下载。
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'chat'} task
+ * @param {'md' | 'pdf'} format
+ * @param {string} filename
+ * @param {boolean} useFileSystemAPI 是否使用 File System Access API 选择路径
+ * @returns {Promise<boolean>}
+ */
+async function executeDownload(task, format, filename, useFileSystemAPI) {
+  // 获取 markdown 内容
+  let markdownContent;
+  if (task === 'chat') {
+    markdownContent = buildChatMarkdown();
+  } else {
+    markdownContent = buildAnalyzeMarkdown(
+      /** @type {'summarize' | 'explainConcepts' | 'critique'} */ (task),
+      savedResults[task] || '',
+    );
+  }
+
+  if (format === 'md') {
+    if (useFileSystemAPI) {
+      return await saveViaFileSystemAPI(markdownContent, filename, 'text/markdown;charset=utf-8');
+    }
+    downloadFile(markdownContent, filename, 'text/markdown;charset=utf-8');
+    return true;
+  }
+
+  // PDF：打开打印窗口（用户可在打印对话框中选择"另存为 PDF"并指定路径）
+  const html = buildPrintHtml(markdownContent);
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('弹窗被浏览器拦截，请允许本站弹窗后重试。');
+    return false;
+  }
+  w.document.write(html);
+  w.document.close();
+  // 等待资源加载完毕后触发打印
+  w.addEventListener('load', () => {
+    setTimeout(() => w.print(), 200);
+  });
+  // 兜底：document 可能已经 complete
+  if (w.document.readyState === 'complete') {
+    setTimeout(() => w.print(), 300);
+  }
+  return true;
 }
 
 /**
@@ -145,6 +274,145 @@ function syncChatSaveButton() {
   }
 }
 
+// =========================================================
+// 下载选项对话框
+// =========================================================
+
+/** 关闭已存在的下载对话框。 */
+function closeDownloadDialog() {
+  document.querySelectorAll('.download-dialog-overlay').forEach((el) => el.remove());
+}
+
+/**
+ * 弹出下载选项对话框。
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'chat'} task
+ */
+function showDownloadDialog(task) {
+  closeDownloadDialog();
+
+  const tag = TAB_LABEL[task] || task;
+  const baseName = makeFilename(
+    getState().paper?.meta?.title || getState().paper?.name || '',
+    tag,
+  );
+
+  const overlay = document.createElement('div');
+  overlay.className = 'download-dialog-overlay';
+  overlay.innerHTML = `
+    <div class="download-dialog">
+      <div class="download-dialog__header">
+        <h3>保存「${escapeHtml(tag)}」</h3>
+        <button type="button" class="download-dialog__close"
+          data-action="dl-close">&times;</button>
+      </div>
+      <div class="download-dialog__body">
+        <label class="download-dialog__label">文件格式</label>
+        <div class="download-dialog__format">
+          <label class="download-dialog__radio">
+            <input type="radio" name="dl-format" value="md" checked>
+            <span class="download-dialog__radio-text">
+              <strong>Markdown (.md)</strong>
+              <small>纯文本格式，兼容性好，可再次编辑</small>
+            </span>
+          </label>
+          <label class="download-dialog__radio">
+            <input type="radio" name="dl-format" value="pdf">
+            <span class="download-dialog__radio-text">
+              <strong>PDF (.pdf)</strong>
+              <small>排版固定，适合打印和分享</small>
+            </span>
+          </label>
+        </div>
+        <label class="download-dialog__label" for="dl-filename">文件名</label>
+        <input id="dl-filename" type="text"
+          class="download-dialog__filename-input"
+          value="${escapeHtml(baseName)}.md" data-dl-filename>
+      </div>
+      <div class="download-dialog__actions">
+        <button type="button" class="ai-btn ai-btn--ghost"
+          data-action="dl-close">取消</button>
+        <button type="button" class="ai-btn ai-btn--ghost"
+          data-action="dl-direct">直接下载</button>
+        <button type="button" class="ai-btn ai-btn--primary"
+          data-action="dl-path">选择路径保存</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // --- 事件绑定 ---
+  const close = () => closeDownloadDialog();
+  const filenameInput = /** @type {HTMLInputElement | null} */ (
+    overlay.querySelector('[data-dl-filename]')
+  );
+
+  // 关闭按钮 + 点击遮罩关闭
+  overlay.querySelectorAll('[data-action="dl-close"]').forEach((b) =>
+    b.addEventListener('click', close));
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+  document.addEventListener('keydown', function onEsc(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
+  });
+
+  // 直接下载
+  overlay.querySelector('[data-action="dl-direct"]')?.addEventListener('click', () => {
+    const format = /** @type {HTMLInputElement} */ (
+      overlay.querySelector('input[name="dl-format"]:checked')
+    ).value;
+    const fname = filenameInput?.value || `${baseName}.${format}`;
+    void executeDownload(task, /** @type {'md' | 'pdf'} */ (format), fname, false);
+    close();
+  });
+
+  // 选择路径保存
+  overlay.querySelector('[data-action="dl-path"]')?.addEventListener('click', async () => {
+    const format = /** @type {HTMLInputElement} */ (
+      overlay.querySelector('input[name="dl-format"]:checked')
+    ).value;
+    const fname = filenameInput?.value || `${baseName}.${format}`;
+    const ok = await executeDownload(task, /** @type {'md' | 'pdf'} */ (format), fname, true);
+    if (ok) close();
+  });
+
+  // 切换格式时同步扩展名
+  overlay.querySelectorAll('input[name="dl-format"]').forEach((r) => {
+    r.addEventListener('change', () => {
+      if (!filenameInput) return;
+      const fmt = /** @type {HTMLInputElement} */ (
+        overlay.querySelector('input[name="dl-format"]:checked')
+      ).value;
+      filenameInput.value = filenameInput.value.replace(/\.(md|pdf)$/, `.${fmt}`);
+    });
+  });
+
+  // 聚焦并全选文件名
+  if (filenameInput) {
+    filenameInput.focus();
+    filenameInput.select();
+  }
+}
+
+// ---------- escapeHtml ----------
+
+/**
+ * @param {string} s
+ * @returns {string}
+ */
+function escapeHtml(s) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// =========================================================
+// 初始化
+// =========================================================
+
 /**
  * 初始化右栏 AI 面板。幂等。
  */
@@ -189,7 +457,6 @@ export function initAiPane() {
     // 中栏追问联动：textPane 设置 quickAsk + 切到 chat tab
     if (s.ui.quickAsk && s.ui.activeTab === 'chat' && !s.ui.busy) {
       const text = s.ui.quickAsk;
-      // 立即清空 quickAsk 防重入
       setState({ ui: { ...getState().ui, quickAsk: null } });
       const input = /** @type {HTMLTextAreaElement | null} */ (
         root?.querySelector('[data-chat-input]')
@@ -267,7 +534,6 @@ function bindTabs() {
       const el = /** @type {HTMLElement} */ (btn);
       const id = el.dataset.tab;
       if (!id) return;
-      // 流式中禁止切换 tab（避免视觉错乱）
       if (getState().ui.busy) return;
       setState({
         ui: { ...getState().ui, activeTab: /** @type {any} */ (id) },
@@ -277,7 +543,6 @@ function bindTabs() {
 }
 
 /**
- * 同步 tab 高亮与 section 可见性。
  * @param {string} activeTab
  */
 function syncTabs(activeTab) {
@@ -295,7 +560,7 @@ function syncTabs(activeTab) {
 }
 
 // =========================================================
-// busy 态：禁用按钮、显示停止按钮
+// busy 态
 // =========================================================
 
 /**
@@ -310,10 +575,13 @@ function syncBusy(busy) {
     /** @type {HTMLButtonElement} */ (btn).disabled = busy;
   });
   root.querySelectorAll('[data-action="save"]').forEach((btn) => {
-    /** @type {HTMLButtonElement} */ (btn).disabled = busy || !savedResults[/** @type {HTMLElement} */ (btn).dataset.task || ''];
+    const el = /** @type {HTMLElement} */ (btn);
+    /** @type {HTMLButtonElement} */ (btn).disabled =
+      busy || !savedResults[el.dataset.task || ''];
   });
   root.querySelectorAll('[data-action="save-chat"]').forEach((btn) => {
-    /** @type {HTMLButtonElement} */ (btn).disabled = busy || getState().messages.length === 0;
+    /** @type {HTMLButtonElement} */ (btn).disabled =
+      busy || getState().messages.length === 0;
   });
   root.querySelectorAll('[data-action="stop"]').forEach((btn) => {
     /** @type {HTMLElement} */ (btn).hidden = !busy;
@@ -321,7 +589,7 @@ function syncBusy(busy) {
 }
 
 // =========================================================
-// 分析 tab（summarize / explainConcepts / critique）
+// 分析 tab
 // =========================================================
 
 function bindAnalyzeButtons() {
@@ -336,47 +604,33 @@ function bindAnalyzeButtons() {
       );
     });
   });
-  // 所有停止按钮共用同一个 abort 入口
   root.querySelectorAll('[data-action="stop"]').forEach((btn) => {
     btn.addEventListener('click', () => abortCurrent());
   });
-  // 分析 Tab 保存按钮
+  // 分析 Tab 保存按钮 → 弹出下载对话框
   root.querySelectorAll('[data-action="save"]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const el = /** @type {HTMLElement} */ (e.currentTarget);
       const task = el.dataset.task;
       if (!task || !savedResults[task]) return;
-      const content = buildAnalyzeMarkdown(
+      showDownloadDialog(
         /** @type {'summarize' | 'explainConcepts' | 'critique'} */ (task),
-        savedResults[task],
       );
-      const tag = TAB_LABEL[task] || task;
-      const filename = makeFilename(
-        getState().paper?.meta?.title || getState().paper?.name || '',
-        tag,
-      );
-      downloadFile(content, filename);
     });
   });
-  // 对话 Tab 保存按钮
+  // 对话 Tab 保存按钮 → 弹出下载对话框
   const saveChatBtn = root.querySelector('[data-action="save-chat"]');
   saveChatBtn?.addEventListener('click', () => {
-    const content = buildChatMarkdown();
-    const filename = makeFilename(
-      getState().paper?.meta?.title || getState().paper?.name || '',
-      '对话',
-    );
-    downloadFile(content, filename);
+    showDownloadDialog('chat');
   });
 }
 
 /**
- * 跑一次分析任务（流式）。
  * @param {'summarize' | 'explainConcepts' | 'critique'} task
  */
 async function runAnalyze(task) {
   if (!root) return;
-  if (getState().ui.busy) return; // 双重保险
+  if (getState().ui.busy) return;
   const section = /** @type {HTMLElement} */ (
     root.querySelector(`[data-section="${task}"]`)
   );
@@ -390,10 +644,8 @@ async function runAnalyze(task) {
   if (!resultEl || !errorEl) return;
 
   hideError(errorEl);
-  // 立刻显示"生成中…"占位（首次 push 会被覆盖）
   resultEl.innerHTML = '<div class="ai-placeholder">生成中…</div>';
 
-  // 启动 AbortController + busy
   currentController = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
 
@@ -411,7 +663,6 @@ async function runAnalyze(task) {
     renderer.finalize();
     savedResults[task] = renderer.getText();
   } catch (err) {
-    // 已收到的部分先 finalize 渲染好，再在错误区显示原因
     renderer.finalize();
     savedResults[task] = renderer.getText();
     showError(errorEl, describeErr(err));
@@ -434,24 +685,14 @@ function bindChat() {
   );
   sendBtn?.addEventListener('click', () => void sendChat());
   input?.addEventListener('keydown', (e) => {
-    // Enter 发送；Shift+Enter 换行；输入法合成中不触发
-    if (
-      e.key === 'Enter' &&
-      !e.shiftKey &&
-      !e.isComposing
-    ) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       void sendChat();
     }
   });
-
-  // 初始渲染（若 store 已有历史消息——比如刷新前同会话，但当前未做持久化，通常为空）
   renderChatList();
 }
 
-/**
- * 发送一条对话。
- */
 async function sendChat() {
   if (!root) return;
   if (getState().ui.busy) return;
@@ -467,11 +708,9 @@ async function sendChat() {
   );
   if (errorEl) hideError(errorEl);
 
-  // 立即清空输入框、追加 user 气泡
   input.value = '';
   appendChatBubble('user', text);
 
-  // 追加一个空 assistant 气泡，作为流式渲染目标（:empty 时 CSS 隐藏）
   const assistantEl = appendChatBubble('assistant', '');
 
   currentController = new AbortController();
@@ -493,10 +732,6 @@ async function sendChat() {
   }
 }
 
-/**
- * 把 store.messages 全量渲染到对话列表。
- * 仅在初始化时调用；运行时 UI 自行 append，不订阅 messages 变化（避免与流式状态打架）。
- */
 function renderChatList() {
   if (!root) return;
   const list = root.querySelector('[data-chat-list]');
@@ -517,10 +752,9 @@ function renderChatList() {
 }
 
 /**
- * 追加一个气泡并滚到底。assistant 气泡返回的元素将作为流式渲染目标。
  * @param {'user' | 'assistant'} role
  * @param {string} text
- * @returns {HTMLElement} 气泡元素本身
+ * @returns {HTMLElement}
  */
 function appendChatBubble(role, text) {
   if (!root) return document.createElement('div');
@@ -531,7 +765,6 @@ function appendChatBubble(role, text) {
   if (role === 'user') {
     bubble.textContent = text;
   }
-  // assistant 气泡内容会由 createStreamingRenderer 填充
   list.appendChild(bubble);
   scrollChatToBottom();
   return bubble;
@@ -551,11 +784,7 @@ function scrollChatToBottom() {
 
 function abortCurrent() {
   if (currentController) {
-    try {
-      currentController.abort();
-    } catch {
-      /* ignore */
-    }
+    try { currentController.abort(); } catch { /* ignore */ }
   }
 }
 
