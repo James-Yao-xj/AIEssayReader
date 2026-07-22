@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 论文阅读插件</title>
+    <script>
+      // 阻塞内联脚本：防止深色主题刷新时闪白
+      (function () {
+        try {
+          var theme = localStorage.getItem('aie:theme');
+          if (theme === 'dark') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        } catch (_) { /* ignore */ }
+      })();
+    </script>
   </head>
   <body>
     <!-- 顶部条：标题 + 未填 Key 提示 + 设置按钮 -->
@@ -11,6 +22,7 @@
       <h1 class="app-title">AI 论文阅读插件</h1>
       <div class="app-header__hint">拖入 PDF 即可开始 · 设置好后用总结/概念/质疑/对话</div>
       <span class="app-header__key-hint" id="key-hint" hidden>未配置 API Key</span>
+      <button class="app-header__btn app-header__btn--theme" id="btn-theme" type="button" title="切换白天/黑夜模式" aria-label="切换白天/黑夜模式">☀️</button>
       <button class="app-header__btn" id="btn-settings" type="button" title="打开设置" aria-label="打开设置">⚙ 设置</button>
     </header>
 

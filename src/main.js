@@ -54,6 +54,9 @@ const statusText = /** @type {HTMLElement} */ (
 const btnSettings = /** @type {HTMLElement | null} */ (
   document.getElementById('btn-settings')
 );
+const btnTheme = /** @type {HTMLElement | null} */ (
+  document.getElementById('btn-theme')
+);
 const keyHint = /** @type {HTMLElement | null} */ (
   document.getElementById('key-hint')
 );
@@ -399,6 +402,51 @@ initPaneResize();
 
 // 2) 加载持久化设置写入 store
 setState({ settings: loadSettings() });
+
+// 2.5) 主题切换（白天/黑夜）
+const THEME_KEY = 'aie:theme';
+
+/**
+ * 获取当前主题（从 data-theme 属性读取）。
+ * @returns {'light' | 'dark'}
+ */
+function getCurrentTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'dark'
+    : 'light';
+}
+
+/**
+ * 应用主题并更新按钮图标。
+ * @param {'light' | 'dark'} theme
+ */
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  if (btnTheme) {
+    btnTheme.textContent = theme === 'dark' ? '🌙' : '☀️';
+    btnTheme.title = theme === 'dark' ? '切换为白天模式' : '切换为黑夜模式';
+  }
+}
+
+/**
+ * 切换主题：白天 ↔ 黑夜。
+ */
+function toggleTheme() {
+  const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch (_) { /* ignore */ }
+}
+
+// 页面加载时，同步按钮图标（data-theme 已由 <head> 内联脚本设置）
+applyTheme(getCurrentTheme());
+
+btnTheme?.addEventListener('click', () => toggleTheme());
 
 // 3) 顶栏"设置"按钮 → 打开设置面板
 btnSettings?.addEventListener('click', () => openSettings());

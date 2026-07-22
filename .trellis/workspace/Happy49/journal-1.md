@@ -104,3 +104,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: 增加白天/黑夜模式切换
+
+**Date**: 2026-07-22
+**Task**: 增加白天/黑夜模式切换
+**Branch**: `dev/黑色模式`
+
+### Summary
+
+在顶部导航栏添加白天/黑夜主题切换按钮。黑夜模式使用深灰蓝背景(#1a1a2e)，通过 [data-theme=dark] CSS 属性选择器覆写全部 UI 颜色。主题偏好持久化到 localStorage(aie:theme)，head 内联阻塞脚本防闪白。修改 index.html, src/main.js, src/styles.css 三个文件。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc40d78` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

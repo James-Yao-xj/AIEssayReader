@@ -158,6 +158,10 @@ export function createStreamingRenderer(element, opts) {
       element.innerHTML = toHtml(buffer);
       autoScroll(element);
     },
+    /** 返回当前已累积的原始 markdown 文本（用于保存/导出）。 */
+    getText() {
+      return buffer;
+    },
   };
 }
 
