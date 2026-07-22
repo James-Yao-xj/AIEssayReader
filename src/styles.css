@@ -6,6 +6,10 @@
    ========================================================= */
 
 /* ---------- 重置 / 基础 ---------- */
+:root {
+  --reader-font-size: 14px;
+}
+
 *,
 *::before,
 *::after {
@@ -209,6 +213,11 @@ body {
 /* 文本阅读模型：绿色标识 */
 .settings-fieldset--reading {
   border-left: 3px solid #52c41a;
+}
+
+/* 显示设置：紫色标识 */
+.settings-fieldset--display {
+  border-left: 3px solid #8b5cf6;
 }
 
 .settings-fieldset__legend {
@@ -621,7 +630,7 @@ body {
 .text-page__body {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 13px;
+  font-size: var(--reader-font-size, 14px);
   line-height: 1.7;
   color: #1f2328;
 }
@@ -839,7 +848,7 @@ body {
   flex: 1 1 auto;
   overflow: auto;
   min-height: 0;
-  font-size: 13px;
+  font-size: var(--reader-font-size, 14px);
   line-height: 1.7;
 }
 
@@ -968,7 +977,7 @@ body {
   max-width: 92%;
   padding: 9px 12px;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: var(--reader-font-size, 14px);
   line-height: 1.65;
   word-break: break-word;
 }

@@ -118,6 +118,17 @@ export function initSettings() {
               <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
             </label>
           </fieldset>
+
+          <!-- 显示设置 -->
+          <fieldset class="settings-fieldset settings-fieldset--display">
+            <legend class="settings-fieldset__legend">🎨 显示设置</legend>
+            <p class="settings-fieldset__desc">调整阅读区域的字体大小。</p>
+            <label class="settings-field">
+              <span class="settings-field__label">正文字号 (px)</span>
+              <input type="number" name="fontSize" min="12" max="24" step="1" value="14" />
+              <span class="settings-field__hint">12~24px，控制中栏文本和 AI 面板的字体大小。</span>
+            </label>
+          </fieldset>
         </div>
 
         <div class="settings-modal__tab-content settings-modal__tab-content--prompts" data-tab-content="prompts" hidden>
@@ -308,6 +319,9 @@ function syncFormFromStore() {
   // API Key 永不回显明文
   syncApiKeyField('reading.apiKey', rd.apiKey);
 
+  // 字体大小
+  setFieldValue('fontSize', String(settings.fontSize ?? 14));
+
   // 提示词模板：自定义优先，无自定义则用默认值填充
   setFieldValue('promptSummarize', settings.promptSummarize || DEFAULT_TEMPLATES.promptSummarize);
   setFieldValue('promptExplainConcepts', settings.promptExplainConcepts || DEFAULT_TEMPLATES.promptExplainConcepts);
@@ -450,6 +464,10 @@ async function save() {
   const promptCritique = String(fd.get('promptCritique') || '').trim();
   const promptChat = String(fd.get('promptChat') || '').trim();
 
+  // 字体大小
+  const fontSizeRaw = String(fd.get('fontSize') || '').trim();
+  const fontSize = Number(fontSizeRaw);
+
   // 温度范围校验（两组各自校验）
   const recTempErr = validateTemperature(recCfg);
   if (recTempErr) {
@@ -459,6 +477,12 @@ async function save() {
   const readTempErr = validateTemperature(readCfg);
   if (readTempErr) {
     showError(`文本阅读模型：${readTempErr}`);
+    return;
+  }
+
+  // 字体大小范围校验
+  if (!Number.isFinite(fontSize) || fontSize < 12 || fontSize > 24 || !Number.isInteger(fontSize)) {
+    showError('正文字号需为 12~24 之间的整数。');
     return;
   }
 
@@ -487,6 +511,7 @@ async function save() {
   const newSettings = {
     recognition,
     reading,
+    fontSize,
     promptSummarize,
     promptExplainConcepts,
     promptCritique,

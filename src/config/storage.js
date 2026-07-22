@@ -175,6 +175,11 @@ function deepMergeSettings(defaults, user) {
     }
   }
 
+  // 合并字体大小（钳制到 12~24 范围，防御 corrupted localStorage）
+  if (typeof user.fontSize === 'number' && Number.isFinite(user.fontSize)) {
+    result.fontSize = Math.min(24, Math.max(12, Math.round(user.fontSize)));
+  }
+
   // 合并提示词
   if (typeof user.promptSummarize === 'string') result.promptSummarize = user.promptSummarize;
   if (typeof user.promptExplainConcepts === 'string') result.promptExplainConcepts = user.promptExplainConcepts;
