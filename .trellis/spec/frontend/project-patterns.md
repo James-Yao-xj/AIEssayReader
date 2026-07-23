@@ -258,10 +258,29 @@ const renderer = createStreamingRenderer(element, { intervalMs: 80 });
 
 策略：最多 80ms 一次重渲染（≈12.5 次/秒），远低于 token 粒度。KaTeX 在每次 flush 时和 marked 一起跑（数学扩展已合并到 marked.parse 中）。
 
+### 定界符归一化（关键陷阱）
+
+marked 数学扩展**只识别 `$`（行内）与 `$$`（块级）**，但很多模型（Claude / DeepSeek / Qwen / GLM 等 OpenAI 兼容模型）即便提示词要求用 `$`，仍经常输出 `\(x^2\)` / `\[E=mc^2\]`。这些会原样当文本显示，表现为「对话/分析里公式不渲染」。
+
+`render.js` 的 `toHtml` 在 `marked.parse` **之前**调 `normalizeLatexDelimiters`，把 `\( ... \)` → `$ ... $`、`\[ ... \]` → 独占行的 `$$ ... $$`：
+
+```js
+function normalizeLatexDelimiters(md) {
+  // 块级：两侧强制 \n\n 成独占行（满足块级扩展的行首要求）
+  md = md.replace(/\\\[(.+?)\\\]/gs, (_, body) => `\n\n$$${body.trim()}$$\n\n`);
+  // 行内：非贪婪，不跨行
+  md = md.replace(/\\\((.+?)\\\)/g, (_, body) => `$${body}$`);
+  return md;
+}
+```
+
+为什么在字符串层做、而不是写 marked 扩展去识别 `\(\)`：marked 会先把 `\(` 当转义字符吃掉，tokenizer 阶段拿不到原始 `\(`；字符串层替换最可靠。块级归一化时强制换行，是为了避开块级扩展「必须行首单独成行」的要求——模型常把 `$$x$$` 写在段落中间导致匹配失败。
+
 ### 错误做法
 
 - ❌ 每 token 都 `katex.renderToString` + `innerHTML = ...`（CPU 卡死）
 - ❌ 遍历 DOM 正则匹配 `$...$` 做替换（正确做法是用 marked 扩展在 parse 阶段处理）
+- ❌ 假设模型一定遵守提示词里「用 `$` 输出公式」的要求（必须归一化 `\( \)` / `\[ \]`，否则大量模型输出不渲染）
 
 ---
 
