@@ -175,15 +175,37 @@ function bindGutter(gutterEl, leftPane, rightPane, container) {
 // ---- 辅助 ----
 
 /**
- * 从当前 DOM 读取三个 pane 的宽度百分比。
+ * 从当前 DOM 读取三个 pane 的宽度百分比，用于持久化。
+ *
+ * 最小化感知（与 paneCollapse.js 协作）：
+ * - 被最小化的 pane 行内宽度是固定像素（如 `36px`），不是百分比，不能直接 parseFloat 当比例存。
+ *   对这类栏，保留基准比例（loadPaneRatios）。
+ * - 非最小化栏取当前百分比。
+ * - 最后归一化：最小化栏保持基准绝对值不变，仅缩放非最小化栏，使三栏总和回到
+ *   DEFAULT_RATIOS 总和（约 99）——这样展开后三栏既填满容器，又保留用户拖拽出的相对比例。
+ *
  * @returns {number[]}
  */
 function readCurrentRatios() {
   const ids = ['pane-pdf', 'pane-text', 'pane-ai'];
-  return ids.map((id, i) => {
+  const base = loadPaneRatios();
+  const target = DEFAULT_RATIOS.reduce((a, b) => a + b, 0);
+
+  // 最小化栏 → 基准值（base:true）；非最小化栏 → 当前百分比
+  const sampled = ids.map((id, i) => {
     const el = document.getElementById(id);
-    if (!el || !el.style.width) return DEFAULT_RATIOS[i];
-    const val = parseFloat(el.style.width);
-    return Number.isFinite(val) ? val : DEFAULT_RATIOS[i];
+    const isMin = !!el && el.classList.contains('pane--minimized');
+    if (!el || isMin) return { base: true, v: base[i] };
+    const v = el.style.width ? parseFloat(el.style.width) : NaN;
+    return { base: false, v: Number.isFinite(v) ? v : base[i] };
   });
+
+  // 仅缩放非最小化栏，使总和回到 target（最小化栏绝对值不变）
+  const sumMin = sampled.filter((s) => s.base).reduce((a, s) => a + s.v, 0);
+  const nonMin = sampled.filter((s) => !s.base);
+  const sumNonMin = nonMin.reduce((a, s) => a + s.v, 0);
+  const wantNonMin = target - sumMin;
+  const f = sumNonMin > 0 ? wantNonMin / sumNonMin : 1;
+
+  return sampled.map((s) => +(s.v * (s.base ? 1 : f)).toFixed(2));
 }

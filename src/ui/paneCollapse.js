@@ -171,11 +171,21 @@ function applyLayout() {
     }
   });
 
-  // 任一栏最小化 → 所有分隔条禁用拖拽
-  /** @type {NodeListOf<HTMLElement>} */
-  const gutters = appMain.querySelectorAll('.pane-gutter');
-  gutters.forEach((g) => {
-    g.classList.toggle('pane-gutter--disabled', anyMin);
+  // 精确禁用：只禁用「紧邻最小化竖条」的分隔条（拖它无意义，竖条宽固定），
+  // 其余分隔条照常可拖，以便用户调整剩余两栏的比例。
+  // 布局：[pdf] gutter[0] [text] gutter[1] [ai]
+  //   - 仅 pdf 最小化  → gutter[0] 禁用（pdf竖条–text）；gutter[1]（text–ai）可拖
+  //   - 仅 text 最小化 → gutter[0]、gutter[1] 均禁用（pdf 与 ai 被 text 竖条隔开）
+  //   - 两栏都最小化   → 均禁用
+  /** @type {HTMLElement[]} */
+  const gutters = /** @type {HTMLElement[]} */ ([
+    ...appMain.querySelectorAll('.pane-gutter'),
+  ]);
+  gutters.forEach((g, i) => {
+    // 分隔条 i 的左侧栏索引 = i，右侧栏索引 = i + 1
+    const leftMin = i < 2 && activeMin.has(PANE_KEYS[i]);
+    const rightMin = i + 1 < 2 && activeMin.has(PANE_KEYS[i + 1]);
+    g.classList.toggle('pane-gutter--disabled', leftMin || rightMin);
   });
 }
 
