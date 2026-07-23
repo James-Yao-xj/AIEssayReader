@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-07-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~172 | Active |
+| `journal-1.md` | ~207 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-07-23 | 版面最小化 + LaTeX 公式定界符归一化 | `1f7fd61`, `a1b8c92`, `6a9e38d` | `chore/MinimizeSomePages` |
 | 5 | 2026-07-23 | 设置界面 UI 美化：去 Emoji + 模型配置改为卡片与滑入抽屉 | `2c72f20` | `chore/Settings_UI_enhancement` |
 | 4 | 2026-07-22 | 增加白天/黑夜模式切换 | `bc40d78` | `dev/黑色模式` |
 | 3 | 2026-07-22 | 字体大小可配置设置 | `5095235` | `dev/Font-Size-Changeable` |

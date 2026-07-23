@@ -170,3 +170,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 版面最小化 + LaTeX 公式定界符归一化
+
+**Date**: 2026-07-23
+**Task**: 版面最小化 + LaTeX 公式定界符归一化
+**Branch**: `chore/MinimizeSomePages`
+
+### Summary
+
+为「原文 PDF」「文字提取」两栏加最小化按钮：点击收成 36px 竖条、其余栏按基准比例加宽、点竖条恢复；状态不持久化、刷新即重置。修复最小化后剩余两栏无法拖拽（改为精确禁用紧邻竖条的分隔条 + 持久化最小化感知防基准比例污染）。附带修复对话/分析面板公式不渲染：在 marked.parse 前归一化 \( \) / \[ \] 定界符为 $ / $$。子代理（Explore/trellis-check）因环境模型配置错误无法运行，探索与质检均在主会话完成。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1f7fd61` | (see git log) |
+| `a1b8c92` | (see git log) |
+| `6a9e38d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
