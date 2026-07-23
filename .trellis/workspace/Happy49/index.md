@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-07-22
+- **Total Sessions**: 5
+- **Last Active**: 2026-07-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~139 | Active |
+| `journal-1.md` | ~172 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-07-23 | 设置界面 UI 美化：去 Emoji + 模型配置改为卡片与滑入抽屉 | `2c72f20` | `chore/Settings_UI_enhancement` |
 | 4 | 2026-07-22 | 增加白天/黑夜模式切换 | `bc40d78` | `dev/黑色模式` |
 | 3 | 2026-07-22 | 字体大小可配置设置 | `5095235` | `dev/Font-Size-Changeable` |
 | 2 | 2026-07-20 | 三栏拖拽调整宽度 | `3b64198` | `fix/betterPrompt` |
