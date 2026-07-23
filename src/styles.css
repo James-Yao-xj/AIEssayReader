@@ -423,6 +423,234 @@ body {
   background: #f0f2f5;
 }
 
+/* ---- 基本设置：摘要卡片 + 右侧滑入抽屉 ---- */
+.settings-basic {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+}
+
+.settings-basic__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: padding-right 0.25s ease;
+}
+
+/* 抽屉打开时把列表内容挤到左半，避免 [配置] 按钮被抽屉盖住 */
+.settings-basic.is-drawer-open .settings-basic__list {
+  padding-right: 52%;
+}
+
+/* scrim：抽屉打开时盖在卡片列表上的半透明遮罩，点击关抽屉 */
+.settings-basic__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 1;
+}
+
+.settings-basic.is-drawer-open .settings-basic__scrim {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ---- 摘要卡片 ---- */
+.settings-card {
+  border: 1px solid #d0d7de;
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 文本识别模型：蓝色标识 */
+.settings-card--recognition {
+  border-left-color: #4a9eff;
+}
+
+/* 文本阅读模型：绿色标识 */
+.settings-card--reading {
+  border-left-color: #52c41a;
+}
+
+.settings-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.settings-card__status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.settings-card__status.is-unconfigured {
+  color: #b35900;
+  background: #fff3e0;
+}
+
+.settings-card__status.is-configured {
+  color: #1a7d3a;
+  background: #e6f4ea;
+}
+
+.settings-card__meta {
+  font-size: 12px;
+  color: #6e7681;
+  line-height: 1.5;
+}
+
+.settings-card__config {
+  align-self: flex-end;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f2328;
+  cursor: pointer;
+}
+
+.settings-card__config:hover {
+  background: #f0f2f5;
+  border-color: #b0b7c0;
+}
+
+/* ---- 右侧滑入抽屉 ---- */
+.settings-basic__drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 52%;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  z-index: 2;
+}
+
+.settings-basic.is-drawer-open .settings-basic__drawer {
+  transform: translateX(0);
+}
+
+.settings-basic__drawer-inner {
+  height: 100%;
+  background: #ffffff;
+  border-left: 1px solid #e3e6eb;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-basic__drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e3e6eb;
+}
+
+.settings-basic__drawer-header [data-drawer-title] {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.settings-basic__drawer-back {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: #6e7681;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.settings-basic__drawer-back:hover {
+  color: #1f2328;
+  background: #f0f2f5;
+}
+
+.settings-basic__drawer-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-basic__drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #e3e6eb;
+}
+
+.settings-basic__drawer-actions button {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.settings-basic__drawer-actions button.primary {
+  background: #0d6efd;
+  color: #ffffff;
+  border: 1px solid #0d6efd;
+}
+
+.settings-basic__drawer-actions button.primary:hover {
+  background: #0b5ed7;
+}
+
+.settings-basic__drawer-actions button:not(.primary) {
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  color: #1f2328;
+}
+
+.settings-basic__drawer-actions button:not(.primary):hover {
+  background: #f0f2f5;
+}
+
+/* .settings-fieldset 设了 display:flex，会覆盖 UA 的 [hidden] 默认值，需显式强制隐藏 */
+.settings-drawer-group[hidden] {
+  display: none;
+}
+
+/* 无障碍：尊重减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-basic__list,
+  .settings-basic__scrim,
+  .settings-basic__drawer {
+    transition: none;
+  }
+}
+
 /* ---------- 下载选项对话框 ---------- */
 .download-dialog-overlay {
   position: fixed;
@@ -1364,6 +1592,99 @@ body {
 }
 
 [data-theme="dark"] .settings-modal__actions button:not(.primary):hover {
+  background: #2a2a4a;
+}
+
+/* ---- 基本设置：摘要卡片 + 右侧滑入抽屉 ---- */
+[data-theme="dark"] .settings-card {
+  background: #1e1e3a;
+  border-color: #3a3a5a;
+}
+
+[data-theme="dark"] .settings-card--recognition {
+  border-left-color: #4a9eff;
+}
+
+[data-theme="dark"] .settings-card--reading {
+  border-left-color: #52c41a;
+}
+
+[data-theme="dark"] .settings-card__title {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-card__meta {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .settings-card__status.is-unconfigured {
+  color: #ffb84d;
+  background: #3a2e0a;
+}
+
+[data-theme="dark"] .settings-card__status.is-configured {
+  color: #6fd97a;
+  background: #143020;
+}
+
+[data-theme="dark"] .settings-card__config {
+  background: #1e1e3a;
+  border-color: #3a3a5a;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-card__config:hover {
+  background: #2a2a4a;
+  border-color: #5a5a7a;
+}
+
+[data-theme="dark"] .settings-basic__scrim {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .settings-basic__drawer-inner {
+  background: #16213e;
+  border-left-color: #2a2a4a;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .settings-basic__drawer-header {
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .settings-basic__drawer-header [data-drawer-title] {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-basic__drawer-back {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .settings-basic__drawer-back:hover {
+  color: #e0e0e0;
+  background: #2a2a4a;
+}
+
+[data-theme="dark"] .settings-basic__drawer-actions {
+  border-top-color: #2a2a4a;
+}
+
+[data-theme="dark"] .settings-basic__drawer-actions button.primary {
+  background: #4a9eff;
+  border-color: #4a9eff;
+}
+
+[data-theme="dark"] .settings-basic__drawer-actions button.primary:hover {
+  background: #5aa8ff;
+}
+
+[data-theme="dark"] .settings-basic__drawer-actions button:not(.primary) {
+  background: #1e1e3a;
+  border-color: #3a3a5a;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .settings-basic__drawer-actions button:not(.primary):hover {
   background: #2a2a4a;
 }
 

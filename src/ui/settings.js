@@ -2,7 +2,9 @@
  * src/ui/settings.js
  *
  * 设置面板（modal），双标签页结构：
- *   Tab 1 "基本设置" — 文本识别模型 + 文本阅读模型 两个独立配置区域
+ *   Tab 1 "基本设置" — 两组模型配置以"摘要卡片"呈现，点"配置"按钮后从右侧
+ *                      滑入抽屉填写（Base URL / API Key / 模型 / 温度）；
+ *                      "显示设置"（字号）保持简单内联 fieldset
  *   Tab 2 "提示词模板" — 4 个可编辑任务提示词 textarea
  *
  * - 保存 → store.setState({settings}) + storage.saveSettings()
@@ -36,6 +38,11 @@ const DEFAULT_TEMPLATES = /** @type {const} */ ({
 let modalEl = null;
 /** @type {HTMLFormElement | null} */
 let formEl = null;
+/**
+ * 当前打开的抽屉对应的模型组；null 表示抽屉关闭（卡片态）。
+ * @type {'recognition' | 'reading' | null}
+ */
+let drawerModel = null;
 
 /**
  * 初始化设置面板：创建 DOM、绑定事件。幂等，重复调用只生效一次。
@@ -61,74 +68,116 @@ export function initSettings() {
       <form class="settings-modal__form" id="settings-form" novalidate>
 
         <div class="settings-modal__tab-content" data-tab-content="basic">
-          <!-- 文本识别模型 -->
-          <fieldset class="settings-fieldset settings-fieldset--recognition">
-            <legend class="settings-fieldset__legend">📷 文本识别模型</legend>
-            <p class="settings-fieldset__desc">用于 AI 视觉识别，将 PDF 页面转为文字。需支持图片输入的视觉模型。</p>
+          <div class="settings-basic">
+            <!-- 抽屉打开时盖在卡片列表上的遮罩，点击即关抽屉 -->
+            <div class="settings-basic__scrim" data-close-drawer></div>
 
-            <label class="settings-field">
-              <span class="settings-field__label">Base URL</span>
-              <input type="url" name="recognition.baseUrl" placeholder="https://api.openai.com/v1" />
-              <span class="settings-field__hint">OpenAI 兼容接口根地址。末尾斜杠会自动去掉。</span>
-            </label>
+            <!-- 摘要卡片列表 -->
+            <div class="settings-basic__list">
+              <!-- 文本识别模型 摘要卡片 -->
+              <div class="settings-card settings-card--recognition" data-model-card="recognition">
+                <div class="settings-card__head">
+                  <span class="settings-card__title">文本识别模型</span>
+                  <span class="settings-card__status is-unconfigured" data-card-status="recognition">未配置</span>
+                </div>
+                <div class="settings-card__meta">模型：<span data-card-model="recognition">未设置</span></div>
+                <button type="button" class="settings-card__config" data-open-drawer="recognition">配置</button>
+              </div>
 
-            <label class="settings-field">
-              <span class="settings-field__label">API Key</span>
-              <input type="password" name="recognition.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-              <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
-            </label>
+              <!-- 文本阅读模型 摘要卡片 -->
+              <div class="settings-card settings-card--reading" data-model-card="reading">
+                <div class="settings-card__head">
+                  <span class="settings-card__title">文本阅读模型</span>
+                  <span class="settings-card__status is-unconfigured" data-card-status="reading">未配置</span>
+                </div>
+                <div class="settings-card__meta">模型：<span data-card-model="reading">未设置</span></div>
+                <button type="button" class="settings-card__config" data-open-drawer="reading">配置</button>
+              </div>
 
-            <label class="settings-field">
-              <span class="settings-field__label">模型</span>
-              <input type="text" name="recognition.model" placeholder="gpt-4o-mini" />
-            </label>
+              <!-- 显示设置：保持简单内联 fieldset（仅去 Emoji） -->
+              <fieldset class="settings-fieldset settings-fieldset--display">
+                <legend class="settings-fieldset__legend">显示设置</legend>
+                <p class="settings-fieldset__desc">调整阅读区域的字体大小。</p>
+                <label class="settings-field">
+                  <span class="settings-field__label">正文字号 (px)</span>
+                  <input type="number" name="fontSize" min="12" max="24" step="1" value="14" />
+                  <span class="settings-field__hint">12~24px，控制中栏文本和 AI 面板的字体大小。</span>
+                </label>
+              </fieldset>
+            </div>
 
-            <label class="settings-field">
-              <span class="settings-field__label">温度</span>
-              <input type="number" name="recognition.temperature" min="0" max="2" step="0.1" value="0.3" />
-              <span class="settings-field__hint">OCR 识别始终使用温度 0 以保证转写一致性，此处仅作默认占位。</span>
-            </label>
-          </fieldset>
+            <!-- 右侧滑入抽屉：两组模型字段都渲染在此 form 内，按当前抽屉只显示一组 -->
+            <div class="settings-basic__drawer" aria-hidden="true">
+              <div class="settings-basic__drawer-inner">
+                <div class="settings-basic__drawer-header">
+                  <button type="button" class="settings-basic__drawer-back" data-close-drawer aria-label="返回">←</button>
+                  <span data-drawer-title>配置：文本识别模型</span>
+                  <span></span>
+                </div>
+                <div class="settings-basic__drawer-body">
+                  <!-- 文本识别模型 字段组 -->
+                  <fieldset class="settings-fieldset settings-fieldset--recognition settings-drawer-group" data-model-fields="recognition">
+                    <p class="settings-fieldset__desc">用于 AI 视觉识别，将 PDF 页面转为文字。需支持图片输入的视觉模型。</p>
 
-          <!-- 文本阅读模型 -->
-          <fieldset class="settings-fieldset settings-fieldset--reading">
-            <legend class="settings-fieldset__legend">📖 文本阅读模型</legend>
-            <p class="settings-fieldset__desc">用于论文总结、概念解释、批判分析和对话。需强推理能力的模型。</p>
+                    <label class="settings-field">
+                      <span class="settings-field__label">Base URL</span>
+                      <input type="url" name="recognition.baseUrl" placeholder="https://api.openai.com/v1" />
+                      <span class="settings-field__hint">OpenAI 兼容接口根地址。末尾斜杠会自动去掉。</span>
+                    </label>
 
-            <label class="settings-field">
-              <span class="settings-field__label">Base URL</span>
-              <input type="url" name="reading.baseUrl" placeholder="https://api.openai.com/v1" />
-              <span class="settings-field__hint">OpenAI 兼容接口根地址。末尾斜杠会自动去掉。</span>
-            </label>
+                    <label class="settings-field">
+                      <span class="settings-field__label">API Key</span>
+                      <input type="password" name="recognition.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+                      <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+                    </label>
 
-            <label class="settings-field">
-              <span class="settings-field__label">API Key</span>
-              <input type="password" name="reading.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-              <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
-            </label>
+                    <label class="settings-field">
+                      <span class="settings-field__label">模型</span>
+                      <input type="text" name="recognition.model" placeholder="gpt-4o-mini" />
+                    </label>
 
-            <label class="settings-field">
-              <span class="settings-field__label">模型</span>
-              <input type="text" name="reading.model" placeholder="gpt-4o-mini" />
-            </label>
+                    <label class="settings-field">
+                      <span class="settings-field__label">温度</span>
+                      <input type="number" name="recognition.temperature" min="0" max="2" step="0.1" value="0.3" />
+                      <span class="settings-field__hint">OCR 识别始终使用温度 0 以保证转写一致性，此处仅作默认占位。</span>
+                    </label>
+                  </fieldset>
 
-            <label class="settings-field">
-              <span class="settings-field__label">温度</span>
-              <input type="number" name="reading.temperature" min="0" max="2" step="0.1" value="0.3" />
-              <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
-            </label>
-          </fieldset>
+                  <!-- 文本阅读模型 字段组 -->
+                  <fieldset class="settings-fieldset settings-fieldset--reading settings-drawer-group" data-model-fields="reading" hidden>
+                    <p class="settings-fieldset__desc">用于论文总结、概念解释、批判分析和对话。需强推理能力的模型。</p>
 
-          <!-- 显示设置 -->
-          <fieldset class="settings-fieldset settings-fieldset--display">
-            <legend class="settings-fieldset__legend">🎨 显示设置</legend>
-            <p class="settings-fieldset__desc">调整阅读区域的字体大小。</p>
-            <label class="settings-field">
-              <span class="settings-field__label">正文字号 (px)</span>
-              <input type="number" name="fontSize" min="12" max="24" step="1" value="14" />
-              <span class="settings-field__hint">12~24px，控制中栏文本和 AI 面板的字体大小。</span>
-            </label>
-          </fieldset>
+                    <label class="settings-field">
+                      <span class="settings-field__label">Base URL</span>
+                      <input type="url" name="reading.baseUrl" placeholder="https://api.openai.com/v1" />
+                      <span class="settings-field__hint">OpenAI 兼容接口根地址。末尾斜杠会自动去掉。</span>
+                    </label>
+
+                    <label class="settings-field">
+                      <span class="settings-field__label">API Key</span>
+                      <input type="password" name="reading.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+                      <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+                    </label>
+
+                    <label class="settings-field">
+                      <span class="settings-field__label">模型</span>
+                      <input type="text" name="reading.model" placeholder="gpt-4o-mini" />
+                    </label>
+
+                    <label class="settings-field">
+                      <span class="settings-field__label">温度</span>
+                      <input type="number" name="reading.temperature" min="0" max="2" step="0.1" value="0.3" />
+                      <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
+                    </label>
+                  </fieldset>
+                </div>
+                <div class="settings-basic__drawer-actions">
+                  <button type="button" data-close-drawer>返回</button>
+                  <button type="submit" class="primary">保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="settings-modal__tab-content settings-modal__tab-content--prompts" data-tab-content="prompts" hidden>
@@ -219,7 +268,25 @@ export function initSettings() {
       tabContents.forEach((c) => {
         c.hidden = c.getAttribute('data-tab-content') !== tabName;
       });
+      // 切换标签页时收起抽屉，避免 is-drawer-open 残留在已隐藏的 basic 区
+      // 干扰 Esc 行为（否则在 prompts tab 上按 Esc 会先空转关一次抽屉）。
+      closeDrawer();
     });
+  });
+
+  // 抽屉：打开 / 关闭（事件委托）
+  modalEl.addEventListener('click', (e) => {
+    const target = /** @type {HTMLElement} */ (e.target);
+    // 点 scrim 关抽屉（scrim 自身带 data-close-drawer，会被下面的分支捕获）
+    const openBtn = target.closest('[data-open-drawer]');
+    if (openBtn) {
+      const m = openBtn.getAttribute('data-open-drawer');
+      if (m === 'recognition' || m === 'reading') openDrawer(m);
+      return;
+    }
+    if (target.closest('[data-close-drawer]')) {
+      closeDrawer();
+    }
   });
 
   // "恢复默认"按钮（事件委托）
@@ -264,7 +331,14 @@ export function initSettings() {
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modalEl && !modalEl.hidden) closeSettings();
+    if (e.key !== 'Escape' || !modalEl || modalEl.hidden) return;
+    // 抽屉打开时 Esc 只关抽屉，不关整个面板
+    const basic = modalEl.querySelector('.settings-basic');
+    if (basic instanceof HTMLElement && basic.classList.contains('is-drawer-open')) {
+      closeDrawer();
+      return;
+    }
+    closeSettings();
   });
 }
 
@@ -280,11 +354,14 @@ export function openSettings() {
   showError('');
   // 重置到第一个 tab
   resetToFirstTab();
+  // 每次打开都回到卡片态（关抽屉），并刷新摘要卡片
+  closeDrawer();
+  renderSummaryCards();
   modalEl.hidden = false;
-  // 自动聚焦第一个空字段
+  // 卡片态下首字段在抽屉内（屏幕外），改为聚焦第一张卡片的"配置"按钮作为主入口
   setTimeout(() => {
-    const baseUrl = formEl?.elements.namedItem('recognition.baseUrl');
-    if (baseUrl instanceof HTMLInputElement) baseUrl.focus();
+    const firstConfig = modalEl?.querySelector('.settings-card__config');
+    if (firstConfig instanceof HTMLElement) firstConfig.focus();
   }, 0);
 }
 
@@ -415,6 +492,91 @@ function resetToFirstTab() {
   const firstContent = modalEl.querySelector('.settings-modal__tab-content[data-tab-content="basic"]');
   if (firstTab instanceof HTMLElement) firstTab.classList.add('settings-modal__tab--active');
   if (firstContent instanceof HTMLElement) firstContent.hidden = false;
+}
+
+/** 模型组 → 卡片标题与抽屉标题文案映射。 */
+const MODEL_LABELS = /** @type {const} */ ({
+  recognition: '文本识别模型',
+  reading: '文本阅读模型',
+});
+
+/**
+ * 打开右侧滑入抽屉并显示指定模型组的字段。
+ * - 切换两组 data-model-fields 显隐（只显示对应模型组）
+ * - 设置抽屉标题
+ * - 加 is-drawer-open class 触发 CSS 滑入；aria-hidden=false
+ * - 聚焦首字段
+ * @param {'recognition'|'reading'} model
+ */
+function openDrawer(model) {
+  if (!modalEl) return;
+  drawerModel = model;
+
+  // 只显示对应模型组的字段
+  const groups = modalEl.querySelectorAll('.settings-drawer-group');
+  groups.forEach((fs) => {
+    const m = fs.getAttribute('data-model-fields');
+    if (fs instanceof HTMLFieldSetElement) fs.hidden = m !== model;
+  });
+
+  // 抽屉标题
+  const titleEl = modalEl.querySelector('[data-drawer-title]');
+  if (titleEl instanceof HTMLElement) {
+    titleEl.textContent = `配置：${MODEL_LABELS[model]}`;
+  }
+
+  // 触发滑入
+  const basic = modalEl.querySelector('.settings-basic');
+  if (basic instanceof HTMLElement) basic.classList.add('is-drawer-open');
+  const drawer = modalEl.querySelector('.settings-basic__drawer');
+  if (drawer instanceof HTMLElement) drawer.setAttribute('aria-hidden', 'false');
+
+  // 聚焦首字段
+  setTimeout(() => {
+    const firstInput = modalEl?.querySelector(
+      `.settings-drawer-group[data-model-fields="${model}"] input`,
+    );
+    if (firstInput instanceof HTMLInputElement) firstInput.focus();
+  }, 0);
+}
+
+/**
+ * 关闭右侧滑入抽屉，回到摘要卡片态。
+ * 不丢弃已填值（字段仍在同一 form 内）。
+ */
+function closeDrawer() {
+  if (!modalEl) return;
+  drawerModel = null;
+  const basic = modalEl.querySelector('.settings-basic');
+  if (basic instanceof HTMLElement) basic.classList.remove('is-drawer-open');
+  const drawer = modalEl.querySelector('.settings-basic__drawer');
+  if (drawer instanceof HTMLElement) drawer.setAttribute('aria-hidden', 'true');
+}
+
+/**
+ * 刷新两张摘要卡片：模型名 + API Key 配置状态。
+ * 读 getState().settings，分别填 recognition / reading。
+ * 已配置 → 成功色；未配置 → 警示色。
+ */
+function renderSummaryCards() {
+  if (!modalEl) return;
+  const { settings } = getState();
+  /** @type {Array<'recognition'|'reading'>} */
+  const models = ['recognition', 'reading'];
+  for (const m of models) {
+    const cfg = settings[m] || {};
+    const modelEl = modalEl.querySelector(`[data-card-model="${m}"]`);
+    if (modelEl instanceof HTMLElement) {
+      modelEl.textContent = cfg.model || '未设置';
+    }
+    const statusEl = modalEl.querySelector(`[data-card-status="${m}"]`);
+    if (statusEl instanceof HTMLElement) {
+      const configured = Boolean(cfg.apiKey);
+      statusEl.textContent = configured ? '已配置' : '未配置';
+      statusEl.classList.toggle('is-configured', configured);
+      statusEl.classList.toggle('is-unconfigured', !configured);
+    }
+  }
 }
 
 /**
