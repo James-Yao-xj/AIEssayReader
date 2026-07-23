@@ -81,6 +81,7 @@ function bindGutter(gutterEl, leftPane, rightPane, container) {
   gutterEl.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return; // 仅左键拖拽
     if (window.innerWidth <= BREAKPOINT) return;
+    if (gutterEl.classList.contains('pane-gutter--disabled')) return; // 版面最小化时不拖拽
     e.preventDefault();
 
     startX = e.clientX;
@@ -155,6 +156,7 @@ function bindGutter(gutterEl, leftPane, rightPane, container) {
   // ---- dblclick：重置为默认比例 ----
   gutterEl.addEventListener('dblclick', () => {
     if (window.innerWidth <= BREAKPOINT) return;
+    if (gutterEl.classList.contains('pane-gutter--disabled')) return; // 版面最小化时不重置
 
     /** @type {(HTMLElement | null)[]} */
     const ids = ['pane-pdf', 'pane-text', 'pane-ai'];

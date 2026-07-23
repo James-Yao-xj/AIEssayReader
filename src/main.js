@@ -28,6 +28,7 @@ import { initSettings, openSettings } from './ui/settings.js';
 import { initAiPane } from './ui/aiPane.js';
 import { initTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
 import { initPaneResize } from './ui/paneResize.js';
+import { initPaneCollapse } from './ui/paneCollapse.js';
 import { extractWithVision } from './pdf/vision.js';
 import { describeErr } from './utils/errors.js';
 
@@ -380,6 +381,9 @@ function openFilePicker() {
 
 // 让左栏 PDF 空态区域点击也能选文件（轻量引导）
 panePdf.addEventListener('click', (e) => {
+  // 标题栏（含最小化按钮）交互不触发选文件；最小化态交给恢复逻辑
+  if (e.target instanceof Element && e.target.closest('.pane__header')) return;
+  if (panePdf.classList.contains('pane--minimized')) return;
   // 仅在没有 PDF 时点击空态才触发选择
   if (!currentPdfHandle) openFilePicker();
 });
@@ -399,6 +403,9 @@ initTextPane();
 
 // 1.7) 初始化三栏可拖拽调整宽度（分隔条 + 比例持久化）
 initPaneResize();
+
+// 1.8) 初始化 PDF / 文字栏的最小化（收成竖条 + 比例重分配）
+initPaneCollapse();
 
 // 2) 加载持久化设置写入 store
 setState({ settings: loadSettings() });

@@ -30,6 +30,10 @@
     <main class="app-main">
       <!-- 左栏：PDF 原版渲染 -->
       <section class="pane pane--pdf" id="pane-pdf" aria-label="PDF 原版">
+        <div class="pane__header">
+          <span class="pane__title">原文 PDF</span>
+          <button class="pane__min-btn" type="button" data-pane="pdf" title="最小化该版面" aria-label="最小化原文 PDF">－</button>
+        </div>
         <div class="pane__empty" data-empty>
           <div class="pane__empty-title">左栏 · PDF 原版</div>
           <div class="pane__empty-desc">拖入 PDF 后，这里渲染原版页面用于核对与查看图表/公式。</div>
@@ -43,6 +47,10 @@
 
       <!-- 中栏：提取的文本 -->
       <section class="pane pane--text" id="pane-text" aria-label="提取文本">
+        <div class="pane__header">
+          <span class="pane__title">文字提取</span>
+          <button class="pane__min-btn" type="button" data-pane="text" title="最小化该版面" aria-label="最小化文字提取">－</button>
+        </div>
         <div class="pane__empty" data-empty>
           <div class="pane__empty-title">中栏 · 提取文本</div>
           <div class="pane__empty-desc">拖入 PDF 后，这里展示按页提取的文本，可选中复制（后续 Step 支持"追问"）。</div>

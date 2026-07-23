@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/project-patterns.md", "reason": "§8 版面最小化错误做法清单——check 时核对是否落入持久化/拖拽/百分比/点击守卫等反模式"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "命名、错误处理、不吞异常等通用质量规则"}
