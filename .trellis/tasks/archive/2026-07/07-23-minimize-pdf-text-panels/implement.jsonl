@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/project-patterns.md", "reason": "§7 三栏拖拽宽度模型、§8 版面最小化模式——栏宽百分比模型与 paneCollapse↔paneResize 单向依赖约定"}
+{"file": ".trellis/spec/frontend/css-design.md", "reason": "BEM 命名、暗色覆盖约定（注：该文档含 Electron 样板，本项目实际为原生 JS，以代码为准）"}

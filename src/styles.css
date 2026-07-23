@@ -791,6 +791,96 @@ body {
   background: #fafbfc;
 }
 
+/* ---------- 面板标题栏（含最小化按钮） ---------- */
+.pane__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f3f5f8;
+  border-bottom: 1px solid #e3e6eb;
+  user-select: none;
+}
+
+.pane__title {
+  color: #424a53;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane__min-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pane__min-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* PDF 栏深底：标题栏用半透明深底 + 浅字 */
+.pane--pdf .pane__header {
+  background: rgba(0, 0, 0, 0.28);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.pane--pdf .pane__title,
+.pane--pdf .pane__min-btn {
+  color: #d7dbe0;
+}
+
+.pane--pdf .pane__min-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ---------- 最小化态：版面收成竖条 ---------- */
+.pane--minimized {
+  cursor: pointer;
+}
+
+/* 最小化时仅保留标题栏（竖条），隐藏空态/滚动区 */
+.pane--minimized > :not(.pane__header) {
+  display: none;
+}
+
+/* 标题栏转为纵向，撑满竖条高度 */
+.pane--minimized .pane__header {
+  flex: 1 1 auto;
+  height: 100%;
+  border-bottom: none;
+  border-right: 1px solid #e3e6eb;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 10px 0;
+}
+
+.pane--minimized .pane__title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* 最小化态下按钮显示「＋」表示可恢复（纵向书写模式下「＋」仍对称可读） */
+.pane--minimized .pane__min-btn {
+  writing-mode: vertical-rl;
+}
+
 /* ---------- 分隔条（可拖拽调整栏宽） ---------- */
 .pane-gutter {
   width: 6px;
@@ -806,6 +896,16 @@ body {
 
 .pane-gutter--dragging {
   background: #0b5ed7;
+}
+
+/* 有版面最小化时，分隔条禁用拖拽 */
+.pane-gutter--disabled {
+  cursor: default;
+  background: #eef0f3;
+}
+
+.pane-gutter--disabled:hover {
+  background: #eef0f3;
 }
 
 /* ---------- 面板空态占位 ---------- */
@@ -1383,6 +1483,16 @@ body {
     display: none;
   }
 
+  /* 窄屏纵向堆叠：隐藏最小化按钮（最小化仅横向布局生效） */
+  .pane__min-btn {
+    display: none;
+  }
+
+  /* 兜底：窄屏下不应保留最小化态的隐藏内容（JS 也会在跨断点时自动恢复） */
+  .pane--minimized > :not(.pane__header) {
+    display: flex;
+  }
+
   .pane {
     border-right: none;
     border-bottom: 1px solid #e3e6eb;
@@ -1771,6 +1881,39 @@ body {
 
 [data-theme="dark"] .pane-gutter--dragging {
   background: #3a7eef;
+}
+
+/* ---- 标题栏 / 最小化 / 禁用分隔条 ---- */
+[data-theme="dark"] .pane__header {
+  background: #1f2a4a;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .pane__title {
+  color: #c8d0e0;
+}
+
+[data-theme="dark"] .pane__min-btn {
+  color: #c8d0e0;
+}
+
+[data-theme="dark"] .pane__min-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* PDF 栏深底在暗色下加深 */
+[data-theme="dark"] .pane--pdf .pane__header {
+  background: rgba(0, 0, 0, 0.38);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .pane--minimized .pane__header {
+  border-right-color: #2a2a4a;
+}
+
+[data-theme="dark"] .pane-gutter--disabled,
+[data-theme="dark"] .pane-gutter--disabled:hover {
+  background: #20203a;
 }
 
 /* ---- 空态占位 ---- */

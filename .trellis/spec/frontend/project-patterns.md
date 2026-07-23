@@ -258,10 +258,29 @@ const renderer = createStreamingRenderer(element, { intervalMs: 80 });
 
 策略：最多 80ms 一次重渲染（≈12.5 次/秒），远低于 token 粒度。KaTeX 在每次 flush 时和 marked 一起跑（数学扩展已合并到 marked.parse 中）。
 
+### 定界符归一化（关键陷阱）
+
+marked 数学扩展**只识别 `$`（行内）与 `$$`（块级）**，但很多模型（Claude / DeepSeek / Qwen / GLM 等 OpenAI 兼容模型）即便提示词要求用 `$`，仍经常输出 `\(x^2\)` / `\[E=mc^2\]`。这些会原样当文本显示，表现为「对话/分析里公式不渲染」。
+
+`render.js` 的 `toHtml` 在 `marked.parse` **之前**调 `normalizeLatexDelimiters`，把 `\( ... \)` → `$ ... $`、`\[ ... \]` → 独占行的 `$$ ... $$`：
+
+```js
+function normalizeLatexDelimiters(md) {
+  // 块级：两侧强制 \n\n 成独占行（满足块级扩展的行首要求）
+  md = md.replace(/\\\[(.+?)\\\]/gs, (_, body) => `\n\n$$${body.trim()}$$\n\n`);
+  // 行内：非贪婪，不跨行
+  md = md.replace(/\\\((.+?)\\\)/g, (_, body) => `$${body}$`);
+  return md;
+}
+```
+
+为什么在字符串层做、而不是写 marked 扩展去识别 `\(\)`：marked 会先把 `\(` 当转义字符吃掉，tokenizer 阶段拿不到原始 `\(`；字符串层替换最可靠。块级归一化时强制换行，是为了避开块级扩展「必须行首单独成行」的要求——模型常把 `$$x$$` 写在段落中间导致匹配失败。
+
 ### 错误做法
 
 - ❌ 每 token 都 `katex.renderToString` + `innerHTML = ...`（CPU 卡死）
 - ❌ 遍历 DOM 正则匹配 `$...$` 做替换（正确做法是用 marked 扩展在 parse 阶段处理）
+- ❌ 假设模型一定遵守提示词里「用 `$` 输出公式」的要求（必须归一化 `\( \)` / `\[ \]`，否则大量模型输出不渲染）
 
 ---
 
@@ -338,6 +357,74 @@ savePaneRatios(ratios) // → boolean
 - ❌ 事件绑在 gutter 自身上（鼠标快速移动会脱离元素）
 - ❌ 不 guard `e.button !== 0`（右键/中键误触发拖拽）
 - ❌ 拖拽中频繁读 `container.clientWidth`（窗口 resize 时不变，拖拽开始时读一次即可）
+
+### 协作：最小化期间精确禁用分隔条
+
+「原文 PDF」「文字提取」两栏支持最小化（`src/ui/paneCollapse.js`）。最小化时**只禁用紧邻最小化竖条的分隔条**（拖它无意义，竖条宽度固定），其余分隔条照常可拖，以便用户调整剩余两栏占比：
+
+- 布局 `[pdf] gutter[0] [text] gutter[1] [ai]`，分隔条 `i` 左右栏索引为 `i` / `i+1`。
+- paneCollapse 给「左栏或右栏处于最小化」的分隔条加 `.pane-gutter--disabled`。
+- `paneResize.js` 的 `mousedown` / `dblclick` 各加一句守卫跳过禁用分隔条：
+
+```js
+if (gutterEl.classList.contains('pane-gutter--disabled')) return;
+```
+
+### 协作：持久化感知最小化（防基准比例污染）
+
+最小化栏的行内宽度是固定像素（`36px`），不是百分比。`mouseup` 持久化时若直接 `parseFloat` 三栏，会把 `36px` 当 `36%` 存进 `aie:pane-ratios`，污染基准比例且恢复后总和溢出容器。因此 `paneResize.readCurrentRatios` 改为最小化感知：
+
+- 最小化栏 → 取基准 `loadPaneRatios()[i]`（保留其展开后的绝对占比）。
+- 非最小化栏 → 取当前百分比。
+- 归一化：最小化栏保持基准绝对值，仅缩放非最小化栏使三栏总和回到 `DEFAULT_RATIOS` 总和（约 99）。
+
+效果：拖拽剩余两栏后恢复被最小化栏，用户的占比调整按相对比例保留，且三栏仍填满容器。
+
+---
+
+## 8. 版面最小化（paneCollapse.js）
+
+### 关注点分离
+
+最小化与拖拽共享「栏宽」这一关注点，但通过**单向依赖**解耦、不引入共享可变状态：
+
+- `paneCollapse` **读** `storage.loadPaneRatios()` 作基准比例（paneResize 每次拖拽结束都会 `savePaneRatios`，始终 fresh）；
+- `paneCollapse` **只写**行内 `style.width`（瞬态，不持久化最小化状态）；
+- `paneCollapse` 给分隔条加 `.pane-gutter--disabled`，`paneResize` 据此跳过拖拽。
+
+### 布局算法（百分比仍是唯一模型）
+
+最小化的栏写固定像素宽（`COLLAPSED_W = 36`），其余栏按基准比例瓜分剩余像素，再换算回 `%`：
+
+```
+fixedW = minimized.size * 36 + 2 * 6(两条 gutter)
+freeW  = containerW - fixedW
+baseSumNonMin = Σ base[i] for 非最小化栏 i   （为 0 则取 1 防除零）
+非最小化栏 i:  width% = (base[i] / baseSumNonMin) * freeW / containerW * 100
+最小化栏:      width = 36px
+```
+
+非最小化栏宽度之和 = freeW，加固定部分恰填满容器。
+
+### DOM/CSS 契约
+
+- 每个 pane 第一个子元素是 `.pane__header`（`.pane__title` + `.pane__min-btn[data-pane]`）。
+- 最小化态：pane 加 `.pane--minimized`；CSS 用 `.pane--minimized > :not(.pane__header) { display:none }` 仅留标题栏，标题栏 `writing-mode: vertical-rl` 转纵向，形成竖条。
+- 点竖条（标题栏）恢复：header click 仅当所在 pane 处于 `.pane--minimized` 时 restore。
+- 「－/＋」文案在 JS 切换 `textContent`（不用纯 CSS，因为按钮既要点又要换提示）。
+
+### 不持久化 + 响应式
+
+- 最小化状态只存模块内 `Set`（运行期），刷新后 `loadPaneRatios()` 返回用户最后拖拽的比例，三栏正常展开。
+- 窄屏（≤960px）：resize 守卫 `minimized.size === 0 时直接 return`（让百分比自然伸缩）；窄屏 `@media` 用 `!important` 的 `width:100%` 覆盖行内宽度，`.pane__min-btn { display:none }` 隐藏按钮；跨断点时 `minimized.clear()` 自动恢复全部展开。
+
+### 错误做法
+
+- ❌ 最小化状态持久化（刷新后突兀地只剩竖条）——明确只存内存。
+- ❌ 最小化时把所有分隔条都禁用（剩余两栏无法调整占比）——应只禁紧邻竖条的分隔条。
+- ❌ 持久化时对最小化栏 `parseFloat('36px')` 当百分比（污染基准比例、恢复后溢出）——`readCurrentRatios` 须最小化感知并归一化。
+- ❌ 最小化栏用百分比而非固定像素（剩余栏无法精确瓜分）。
+- ❌ PDF 空态点击监听不守卫 `.pane__header`（点「－」会误开文件选择器）。
 
 ---
 
