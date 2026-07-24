@@ -238,3 +238,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 翻译面板：第五个 tab，文献中译
+
+**Date**: 2026-07-24
+**Task**: 翻译面板：第五个 tab，文献中译
+**Branch**: `dev/Translation`
+
+### Summary
+
+新增右栏第五个 tab「翻译」，复用总结/概念/质疑的一次性任务管线（runOneShot('translate')），零新增 CSS/依赖。改动是给第五个任务贯通七处并行插槽、不修改既有四任务任何代码路径：prompts.js 加 TRANSLATE（强约束公式/代码/引用标记原样保留、要求 $...$/$$...$$ 输出、术语首次「中文（原文）」、逐段忠实翻译）、context.js（TASK_TEMPLATES+Task 联合，assemble 非 chat 分支自动适用）、client.js translate()、defaults/storage 的 promptTranslate、settings.js 第 5 个提示词编辑块（靠现有按 name 事件委托自动获得恢复默认/预览/保存）、aiPane.js（TABS 置翻译于质疑与对话之间 + runAnalyze ternary + Task JSDoc）、store.js activeTab 联合。trellis-check 实证核验 TRANSLATE 模板字面量转义（反引号/反斜杠）11 条子串原样、0 bug、0 修改。npm run build 通过。spec 更新：project-patterns §4 补翻译类提示词约束 + 新增一次性任务的七处并行插槽清单、§3 形状补 promptTranslate。AC3/AC4/AC5 为模型运行时行为需浏览器手测。本会话另含先收尾 pdf-ctrl-wheel-zoom（前序只规划未实现，本轮补齐落地）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0667e45` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
