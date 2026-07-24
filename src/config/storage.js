@@ -184,6 +184,7 @@ function deepMergeSettings(defaults, user) {
   if (typeof user.promptSummarize === 'string') result.promptSummarize = user.promptSummarize;
   if (typeof user.promptExplainConcepts === 'string') result.promptExplainConcepts = user.promptExplainConcepts;
   if (typeof user.promptCritique === 'string') result.promptCritique = user.promptCritique;
+  if (typeof user.promptTranslate === 'string') result.promptTranslate = user.promptTranslate;
   if (typeof user.promptChat === 'string') result.promptChat = user.promptChat;
 
   return result;
@@ -221,6 +222,7 @@ function migrateFromFlat(old) {
   if (typeof old.promptSummarize === 'string') result.promptSummarize = old.promptSummarize;
   if (typeof old.promptExplainConcepts === 'string') result.promptExplainConcepts = old.promptExplainConcepts;
   if (typeof old.promptCritique === 'string') result.promptCritique = old.promptCritique;
+  if (typeof old.promptTranslate === 'string') result.promptTranslate = old.promptTranslate;
   if (typeof old.promptChat === 'string') result.promptChat = old.promptChat;
 
   // 静默写回 localStorage（失败不阻塞）

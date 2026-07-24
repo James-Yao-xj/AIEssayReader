@@ -82,7 +82,7 @@ createProvider({baseUrl, apiKey, model, temperature}) -> {
   settings: {
     recognition: { baseUrl, apiKey, model, temperature },  // 文本识别模型（vision.js 消费）
     reading:     { baseUrl, apiKey, model, temperature },  // 文本阅读模型（client.js 消费）
-    promptSummarize, promptExplainConcepts, promptCritique, promptChat,  // 提示词模板
+    promptSummarize, promptExplainConcepts, promptCritique, promptTranslate, promptChat,  // 提示词模板
   },
   messages: [{ role:'user'|'assistant', content }],
   ui: { activeTab, busy: boolean, quickAsk: string|null },
@@ -217,10 +217,33 @@ function migrateFromFlat(old) {
 
 ### 滑窗规则（context.js）
 
-- `summarize/explainConcepts/critique`：只发 `[system, 单条user触发指令]`，不走 messages 历史
+- `summarize/explainConcepts/critique/translate`：只发 `[system, 单条user触发指令]`，不走 messages 历史
 - `chat`：system + 最近 `recentN*2` 条消息（user/assistant 成对），避开 assistant 孤儿
 - 字符预算：`MAX_TOTAL_CHARS=100k`，超预算继续从最旧丢，始终保留 system
 - 新建任务不要改装配顺序；自定义提示词走任务模板层，不碰 GLOBAL_STYLE
+
+### 翻译类提示词约束（TRANSLATE 的关键陷阱）
+
+新增「整篇翻译」是一次性任务模式的又一实例（`runOneShot('translate')`，复用 `assemble` 非 chat 分支）。真正易错的是**提示词本身**：翻译时模型倾向把 `$E=mc^2$` 里的变量「翻译」成中文、重排公式、或漏掉公式。TRANSLATE 提示词必须用强约束规避：
+
+- **单独成节、祈使句 + 举例**列明「原样保留、不得翻译改写」：数学公式（行内 `$...$`、块级 `$$...$$`，公式内部一字不改）、代码块/行内代码、图表编号标号、参考文献引用标记（`[12]`、`(Author, year)`、`\cite{...}`）。
+- 明确要求**输出用 `$` 形式**（不要 `\(\)`/`\[\]`），与 render.js 数学扩展匹配；显示层 `normalizeLatexDelimiters` 兜底作双保险。
+- 翻译是**忠实全文**：逐段翻译、保留标题层级、不得概括/缩写/漏译。
+
+> 已知限制：整篇一次性翻译受模型单次最大输出 token 限制，超长论文（20+ 页）译文可能被截断；分块续译需处理术语一致性与块边界，属更大改动。
+
+### 新增一次性任务的并行插槽清单
+
+新增一个一次性任务（如 translate）需贯通七处并行插槽，**零新增 CSS、零新增依赖**，且不修改既有任务的任何代码路径：
+
+1. `ai/prompts.js`：`export const <TEMPLATE>`；文件头模板清单补一行。
+2. `ai/context.js`：import + `TASK_TEMPLATES[task]` + `Task` 联合。`assemble()` 无需改（非 chat 分支自动适用）。
+3. `ai/client.js`：`export function <task>(signal){ return runOneShot('<task>', signal); }` + `getPromptTemplates()` 返回项 + 相关 JSDoc。
+4. `config/defaults.js`：import + `Settings` typedef `prompt<Task>` + `DEFAULT_SETTINGS`。
+5. `config/storage.js`：`deepMergeSettings` + `migrateFromFlat` 各加一行 per-field 合并。
+6. `ui/settings.js`：`DEFAULT_TEMPLATES` + 第 N 个 `.settings-field--prompt` 块（须含 `name`/`data-prompt-textarea`/`data-target`/`data-preview` 四者，靠现有按 name 的事件委托自动获得恢复默认/预览/保存，无需新增绑定）+ `syncFormFromStore` + `save()` 收集与 `newSettings`。
+7. `ui/aiPane.js`：`TABS`（一次性 tab 聚拢、chat 留最后）+ `savedResults` + `TAB_LABEL` + `renderAnalyzeTab` 调用 + `runAnalyze` ternary 新增分支 + 各处 `Task` JSDoc/cast。
+8. `state/store.js`：`ui.activeTab` 联合扩成员（默认值不变）。
 
 ### 错误做法
 

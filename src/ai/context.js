@@ -17,6 +17,7 @@ import {
   SUMMARIZE,
   EXPLAIN_CONCEPTS,
   CRITIQUE,
+  TRANSLATE,
   CHAT,
 } from './prompts.js';
 
@@ -34,11 +35,12 @@ const TASK_TEMPLATES = {
   summarize: SUMMARIZE,
   explainConcepts: EXPLAIN_CONCEPTS,
   critique: CRITIQUE,
+  translate: TRANSLATE,
   chat: CHAT,
 };
 
 /**
- * @typedef {'summarize' | 'explainConcepts' | 'critique' | 'chat'} Task
+ * @typedef {'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat'} Task
  */
 
 /**
