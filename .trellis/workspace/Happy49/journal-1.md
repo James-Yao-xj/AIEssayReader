@@ -205,3 +205,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: PDF Ctrl+滚轮独立缩放：实现与收尾
+
+**Date**: 2026-07-24
+**Task**: PDF Ctrl+滚轮独立缩放：实现与收尾
+**Branch**: `dev/Translation`
+
+### Summary
+
+为前序已规划但未实现的 pdf-ctrl-wheel-zoom 落地代码：render.js 以「适应栏宽」为 1× 基准按 userZoom 重渲染 canvas（行内 maxWidth:none 解除 CSS max-width:100% 上限），container 上非 passive wheel + preventDefault 实现 Ctrl/Cmd 滚轮仅缩放 PDF 栏（非 Ctrl 放行），向光标处缩放锚点（重渲染可见页后按真实 getBoundingClientRect 重算 scrollTop，非可见页保留旧 canvas 保稳定），leading+trailing 节流 80ms，范围 0.5–3.0、snap 1.0，cleanup 随生命周期解绑；main.js 仅补 JSDoc。trellis-check 逐行核验竞态/节流/锚点/清理/反模式均 PASS、0 bug；额外加 applyZoom 顶部 destroyed 守卫消除 PDF 切换中途的渲染噪声。npm run build 通过。spec 更新：frontend/index 架构行 + project-patterns 新增第 9 节记录倍率模型/max-width 陷阱/局部缩放/锚点反模式。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe09c4a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
