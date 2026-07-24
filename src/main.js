@@ -63,7 +63,11 @@ const keyHint = /** @type {HTMLElement | null} */ (
 );
 
 // ---- 当前渲染状态（用于切换文件时清理）----
-/** @type {{ cleanup: () => void } | null} */
+/**
+ * 当前 PDF 渲染句柄。wheel→缩放在 render.js 内部随生命周期绑定/解绑，
+ * main.js 无需感知缩放细节；setZoom/getZoom 仅供未来 UI 控件/测试使用。
+ * @type {{ cleanup: () => void, setZoom: (z:number) => void, getZoom: () => number } | null}
+ */
 let currentPdfHandle = null;
 /** @type {AbortController | null} */
 let activeVisionAbort = null;

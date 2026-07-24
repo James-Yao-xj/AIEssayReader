@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/project-patterns.md", "reason": "§1 pdf.js 复用约定；§7/§8 栏宽/最小化协作——核对缩放不破坏懒加载、版面最小化、栏宽拖拽"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "命名、错误处理、幂等、不吞异常等通用质量规则——核对 wheel/applyZoom/renderPageInto 的边界与防御"}

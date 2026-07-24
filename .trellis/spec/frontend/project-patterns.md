@@ -472,3 +472,81 @@ src/
 - 窄屏 960px 断点 → `flex-direction: column` 堆叠，gutter 隐藏，pane 宽度重置
 - PDF 左栏背景 `#525659`（深色模拟阅读器）；AI 右栏 `#fafbfc`
 - KaTeX 公式块：`overflow-x: auto`（防长公式撑爆布局）
+
+---
+
+## 9. PDF 原版渲染：懒加载 + Ctrl+滚轮局部缩放（render.js）
+
+### 倍率模型（关键：不能"只改 scale"）
+
+canvas 默认 CSS 是 `.pane--pdf canvas { max-width:100%; height:auto }`（适应栏宽）。若只把 pdf.js 的 renderScale 调大，位图虽变大但被 `max-width:100%` 压回栏宽 → **视觉尺寸不变，缩放失效**；若直接取消 max-width，默认（未缩放）就会超出栏宽。
+
+解法：以「适应栏宽」为 1× 基准，按 `userZoom` 重渲染并**显式设定显示宽度**：
+
+```js
+const baseVp   = page.getViewport({ scale: 1 });
+const contentW = Math.max(1, container.clientWidth - 2 * PAD_PX); // PAD_PX=16 对齐 .pane__scroll padding
+const fitScale = contentW / baseVp.width;        // 刚好填满栏宽的倍率
+const viewport = page.getViewport({ scale: fitScale * userZoom });
+canvas.width  = Math.round(viewport.width);      // 位图宽 = 显示宽（1:1，文字锐利）
+canvas.height = Math.round(viewport.height);
+canvas.style.width    = viewport.width + 'px';   // 显式显示宽
+canvas.style.maxWidth = 'none';                  // 行内覆盖 CSS 的 max-width:100%
+```
+
+- `userZoom=1`：显示宽 = contentW → 等价「适应栏宽」，默认体验不变。
+- `userZoom>1`：显示宽 > contentW → 超出栏宽，`.pane__scroll { overflow:auto }` 出滚动条。
+- CSS 的 `max-width:100%` **保留**作降级兜底（行内 `maxWidth:none` 优先级更高，无需删 CSS 规则）。
+
+### 可重渲染的懒加载（renderedZoom Map）
+
+单一 `rendered: Set` 不够（缩放后已渲染页需重渲染）。改用 **per-page 记录上次渲染时的 userZoom**：
+
+```js
+const renderedZoom = new Map(); // pageNum -> 渲染时的 userZoom
+if (renderedZoom.get(num) === zoom) return;       // 幂等：zoom 不匹配才渲染
+// ...await page.render...
+if (userZoom === zoom) renderedZoom.set(num, zoom); // 仅当 userZoom 仍是本次目标时才标记
+```
+
+- 「仅当 `userZoom === zoom` 才写」防止 `await page.render()` 期间 userZoom 再变导致 **stale 写入**（否则旧 zoom 被记下，后续跳过本应发生的重渲染）。
+- IO 回调照旧调 renderPageInto：可见页 zoom 不匹配就重渲染，匹配则跳过。
+
+### 局部 Ctrl+滚轮缩放（防浏览器整页缩放）
+
+```js
+container.addEventListener('wheel', onWheel, { passive: false }); // 必须非 passive 才能 preventDefault
+const onWheel = (e) => {
+  if (!e.ctrlKey && !e.metaKey) return; // 非 Ctrl 放行，保留普通滚动（绝不 preventDefault）
+  e.preventDefault();                    // 每个 Ctrl tick 都 preventDefault（即便节流未触发渲染）
+  // nextZoom = clamp(userZoom × step^dir)；leading+trailing 节流（≈80ms）调 applyZoom
+};
+```
+
+- 监听绑在 **container（`#pdf-scroll` 滚动容器）**，绝不绑 `window`/`document`（否则影响其它栏）。
+- 缩放逻辑全部封装在 render.js 内（`cleanup` 一并 `removeEventListener` + 清 trailing timer）；main.js 只消费返回 handle 的 `setZoom/getZoom`——满足 `pdf/` 不依赖 `ui/`。
+- 切换 PDF 时 main.js 先调旧 handle 的 `cleanup()` 再建新闭包（userZoom 重置 1.0、新监听绑定），无跨文件泄漏。
+
+### 向光标处缩放（锚点）
+
+```js
+// 重渲染【前】记录
+f = clamp((e.clientY - canvasRect.top) / canvasRect.height, 0, 1); // 光标在锚定页内的纵向比例
+viewportY = e.clientY - container.getBoundingClientRect().top;       // 光标在容器视口内的 y
+// 更新 userZoom → await 重渲染【可见页】→ 重算 scrollTop（用重排后真实 getBoundingClientRect）
+holderTopInScroll = anchoredHolder.getBoundingClientRect().top - containerRect.top + container.scrollTop;
+container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
+```
+
+- **非可见页不即时重渲染**（保留旧 canvas → 高度不变 → 上方位移稳定 → 锚点准），等滚动进入视口由 IO 按当前 userZoom 补渲染。
+- 用重排后真实 `getBoundingClientRect` 算 `holderTopInScroll`，自动吸收「上方可见页也被重渲染导致的高度变化」，无需枚举哪些页重渲染过。
+- 找不到锚定页（光标在 padding/间隙）→ 跳过锚点、保持当前 scrollTop（可接受的降级，不抛错）。
+
+### 错误做法
+
+- ❌ wheel 监听用默认 passive（无法 preventDefault，整页仍被浏览器缩放）。
+- ❌ 非 Ctrl 也 preventDefault（破坏普通滚动与可访问性）。
+- ❌ 只改 renderScale 不动 CSS max-width（放大被压回栏宽，缩放失效）。
+- ❌ 用 CSS transform 缩放 canvas（不撑布局 → 无滚动条、被裁切；位图不足时发虚）。
+- ❌ 缩放即清空/全量重渲染所有页（性能爆炸 + 锚点 offsetTop 失稳）。
+- ❌ 把 wheel 监听绑 `window`/`document`（影响其它栏）；或缩放逻辑泄漏到 main.js（违反单向依赖）。
