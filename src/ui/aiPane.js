@@ -3,8 +3,8 @@
  *
  * 右栏 AI 面板（design.md §2、§4）。
  *
- * - 4 个 tab：总结(summarize) / 概念(explainConcepts) / 质疑(critique) / 对话(chat)
- * - 三大分析 tab：生成按钮 + .md-body 结果区，createStreamingRenderer 边收边渲染
+ * - 5 个 tab：总结(summarize) / 概念(explainConcepts) / 质疑(critique) / 翻译(translate) / 对话(chat)
+ * - 四大分析 tab：生成按钮 + .md-body 结果区，createStreamingRenderer 边收边渲染
  * - chat tab：消息列表（user/assistant 气泡）+ 输入框 + 发送按钮
  *   · Enter 发送、Shift+Enter 换行
  *   · 输入法合成（composition）期间 Enter 不触发发送
@@ -24,6 +24,7 @@ const TABS = [
   { id: 'summarize', label: '总结' },
   { id: 'explainConcepts', label: '概念' },
   { id: 'critique', label: '质疑' },
+  { id: 'translate', label: '翻译' },
   { id: 'chat', label: '对话' },
 ];
 
@@ -38,6 +39,7 @@ const savedResults = /** @type {Record<string, string>} */ ({
   summarize: '',
   explainConcepts: '',
   critique: '',
+  translate: '',
 });
 
 /** Tab id → 中文短标签（用于文件名）。 */
@@ -45,6 +47,7 @@ const TAB_LABEL = /** @type {Record<string, string>} */ ({
   summarize: '总结',
   explainConcepts: '概念解释',
   critique: '质疑',
+  translate: '翻译',
   chat: '对话',
 });
 
@@ -162,7 +165,7 @@ function buildPrintHtml(markdownContent) {
 
 /**
  * 执行实际下载。
- * @param {'summarize' | 'explainConcepts' | 'critique' | 'chat'} task
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat'} task
  * @param {'md' | 'pdf'} format
  * @param {string} filename
  * @param {boolean} useFileSystemAPI 是否使用 File System Access API 选择路径
@@ -175,7 +178,7 @@ async function executeDownload(task, format, filename, useFileSystemAPI) {
     markdownContent = buildChatMarkdown();
   } else {
     markdownContent = buildAnalyzeMarkdown(
-      /** @type {'summarize' | 'explainConcepts' | 'critique'} */ (task),
+      /** @type {'summarize' | 'explainConcepts' | 'critique' | 'translate'} */ (task),
       savedResults[task] || '',
     );
   }
@@ -210,7 +213,7 @@ async function executeDownload(task, format, filename, useFileSystemAPI) {
 
 /**
  * 构建分析 Tab 的 markdown 文件内容。
- * @param {'summarize' | 'explainConcepts' | 'critique'} task
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate'} task
  * @param {string} rawText AI 原始输出
  * @returns {string}
  */
@@ -285,7 +288,7 @@ function closeDownloadDialog() {
 
 /**
  * 弹出下载选项对话框。
- * @param {'summarize' | 'explainConcepts' | 'critique' | 'chat'} task
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat'} task
  */
 function showDownloadDialog(task) {
   closeDownloadDialog();
@@ -440,6 +443,7 @@ export function initAiPane() {
       ${renderAnalyzeTab('summarize', '总结', '生成结构化的全文总结（一句话/背景/方法/结果/局限）。')}
       ${renderAnalyzeTab('explainConcepts', '解释概念', '抽取并解释论文中的关键概念（含官方定义 + 通俗解释）。')}
       ${renderAnalyzeTab('critique', '批判质疑', '从方法/结果/论证三个层面对论文提出质疑并给改进建议。')}
+      ${renderAnalyzeTab('translate', '翻译', '把论文全文忠实翻译成中文，保留公式/代码/结构与引用标记。')}
       ${renderChatTab()}
     </div>
   `;
@@ -600,7 +604,7 @@ function bindAnalyzeButtons() {
       const task = el.dataset.task;
       if (!task) return;
       void runAnalyze(
-        /** @type {'summarize' | 'explainConcepts' | 'critique'} */ (task),
+        /** @type {'summarize' | 'explainConcepts' | 'critique' | 'translate'} */ (task),
       );
     });
   });
@@ -614,7 +618,7 @@ function bindAnalyzeButtons() {
       const task = el.dataset.task;
       if (!task || !savedResults[task]) return;
       showDownloadDialog(
-        /** @type {'summarize' | 'explainConcepts' | 'critique'} */ (task),
+        /** @type {'summarize' | 'explainConcepts' | 'critique' | 'translate'} */ (task),
       );
     });
   });
@@ -626,7 +630,7 @@ function bindAnalyzeButtons() {
 }
 
 /**
- * @param {'summarize' | 'explainConcepts' | 'critique'} task
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate'} task
  */
 async function runAnalyze(task) {
   if (!root) return;
@@ -656,7 +660,11 @@ async function runAnalyze(task) {
         ? client.summarize(currentController.signal)
         : task === 'explainConcepts'
           ? client.explainConcepts(currentController.signal)
-          : client.critique(currentController.signal);
+          : task === 'critique'
+            ? client.critique(currentController.signal)
+            : task === 'translate'
+              ? client.translate(currentController.signal)
+              : client.critique(currentController.signal); // 理论不可达兜底
     for await (const chunk of iterable) {
       renderer.push(chunk);
     }

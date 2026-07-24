@@ -33,7 +33,7 @@ main.js (入口：装配全局事件、初始化各面板)
   ├─> ui/settings.js   ←→ config/storage.js (localStorage)
   ├─> ui/textPane.js   (中栏文本 + 选中追问，通过 store.ui.quickAsk 解耦)
   ├─> pdf/extract.js   (pdf.js 文本提取 + worker 配置)
-  └─> pdf/render.js    (pdf.js 原版渲染，IntersectionObserver 懒加载)
+  └─> pdf/render.js    (pdf.js 原版渲染，IntersectionObserver 懒加载 + Ctrl+滚轮局部缩放)
 ```
 
 **依赖方向单向**：ui → state/store → ai/client → ai/openai + ai/context + ai/prompts；ui → pdf/；ui → config/。

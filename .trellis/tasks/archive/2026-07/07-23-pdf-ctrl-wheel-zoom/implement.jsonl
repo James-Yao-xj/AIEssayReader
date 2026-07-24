@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/project-patterns.md", "reason": "§1 pdf.js worker 内联/复用 pdfjsLib、§7/§8 栏宽与版面最小化模型——缩放须与现有 #pdf-scroll 容器、IntersectionObserver 懒加载、版面最小化 display:none 协同，不破坏单向依赖"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "技术栈与文件结构约定：原生 ESM、单 styles.css、JSDoc、pdf/ 不依赖 ui/——render.js 缩放逻辑须自包含"}

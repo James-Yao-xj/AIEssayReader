@@ -10,6 +10,7 @@ import {
   SUMMARIZE,
   EXPLAIN_CONCEPTS,
   CRITIQUE,
+  TRANSLATE,
   CHAT,
 } from '../ai/prompts.js';
 
@@ -30,6 +31,7 @@ import {
  * @property {string} promptSummarize       总结论文的提示词模板。
  * @property {string} promptExplainConcepts 解释概念的提示词模板。
  * @property {string} promptCritique        批判质疑的提示词模板。
+ * @property {string} promptTranslate       翻译论文的提示词模板。
  * @property {string} promptChat            对话的提示词模板。
  */
 
@@ -57,5 +59,6 @@ export const DEFAULT_SETTINGS = {
   promptSummarize: SUMMARIZE,
   promptExplainConcepts: EXPLAIN_CONCEPTS,
   promptCritique: CRITIQUE,
+  promptTranslate: TRANSLATE,
   promptChat: CHAT,
 };

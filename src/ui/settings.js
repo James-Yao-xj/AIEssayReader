@@ -5,7 +5,7 @@
  *   Tab 1 "基本设置" — 两组模型配置以"摘要卡片"呈现，点"配置"按钮后从右侧
  *                      滑入抽屉填写（Base URL / API Key / 模型 / 温度）；
  *                      "显示设置"（字号）保持简单内联 fieldset
- *   Tab 2 "提示词模板" — 4 个可编辑任务提示词 textarea
+ *   Tab 2 "提示词模板" — 5 个可编辑任务提示词 textarea
  *
  * - 保存 → store.setState({settings}) + storage.saveSettings()
  * - 打开/关闭：openSettings() / closeSettings()；Esc、点遮罩、点取消都可关闭
@@ -22,6 +22,7 @@ import {
   SUMMARIZE,
   EXPLAIN_CONCEPTS,
   CRITIQUE,
+  TRANSLATE,
   CHAT,
 } from '../ai/prompts.js';
 import { renderMarkdown } from './render.js';
@@ -31,6 +32,7 @@ const DEFAULT_TEMPLATES = /** @type {const} */ ({
   promptSummarize: SUMMARIZE,
   promptExplainConcepts: EXPLAIN_CONCEPTS,
   promptCritique: CRITIQUE,
+  promptTranslate: TRANSLATE,
   promptChat: CHAT,
 });
 
@@ -238,6 +240,20 @@ export function initSettings() {
               </div>
             </div>
           </div>
+
+          <div class="settings-field settings-field--prompt">
+            <span class="settings-field__label">翻译提示词</span>
+            <div class="settings-field__prompt-row">
+              <div class="settings-field__editor">
+                <textarea name="promptTranslate" rows="12" spellcheck="false" data-prompt-textarea></textarea>
+                <button type="button" class="settings-field__reset" data-target="promptTranslate">恢复默认</button>
+              </div>
+              <div class="settings-field__preview">
+                <div class="settings-field__preview-head">预览</div>
+                <div class="settings-field__preview-content md-body" data-preview="promptTranslate"></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="settings-modal__error" id="settings-error" hidden></div>
@@ -403,6 +419,7 @@ function syncFormFromStore() {
   setFieldValue('promptSummarize', settings.promptSummarize || DEFAULT_TEMPLATES.promptSummarize);
   setFieldValue('promptExplainConcepts', settings.promptExplainConcepts || DEFAULT_TEMPLATES.promptExplainConcepts);
   setFieldValue('promptCritique', settings.promptCritique || DEFAULT_TEMPLATES.promptCritique);
+  setFieldValue('promptTranslate', settings.promptTranslate || DEFAULT_TEMPLATES.promptTranslate);
   setFieldValue('promptChat', settings.promptChat || DEFAULT_TEMPLATES.promptChat);
 
   console.warn('[Config:Sync] store → form fields', {
@@ -624,6 +641,7 @@ async function save() {
   const promptSummarize = String(fd.get('promptSummarize') || '').trim();
   const promptExplainConcepts = String(fd.get('promptExplainConcepts') || '').trim();
   const promptCritique = String(fd.get('promptCritique') || '').trim();
+  const promptTranslate = String(fd.get('promptTranslate') || '').trim();
   const promptChat = String(fd.get('promptChat') || '').trim();
 
   // 字体大小
@@ -677,6 +695,7 @@ async function save() {
     promptSummarize,
     promptExplainConcepts,
     promptCritique,
+    promptTranslate,
     promptChat,
   };
 

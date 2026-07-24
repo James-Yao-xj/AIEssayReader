@@ -82,7 +82,7 @@ createProvider({baseUrl, apiKey, model, temperature}) -> {
   settings: {
     recognition: { baseUrl, apiKey, model, temperature },  // 文本识别模型（vision.js 消费）
     reading:     { baseUrl, apiKey, model, temperature },  // 文本阅读模型（client.js 消费）
-    promptSummarize, promptExplainConcepts, promptCritique, promptChat,  // 提示词模板
+    promptSummarize, promptExplainConcepts, promptCritique, promptTranslate, promptChat,  // 提示词模板
   },
   messages: [{ role:'user'|'assistant', content }],
   ui: { activeTab, busy: boolean, quickAsk: string|null },
@@ -217,10 +217,33 @@ function migrateFromFlat(old) {
 
 ### 滑窗规则（context.js）
 
-- `summarize/explainConcepts/critique`：只发 `[system, 单条user触发指令]`，不走 messages 历史
+- `summarize/explainConcepts/critique/translate`：只发 `[system, 单条user触发指令]`，不走 messages 历史
 - `chat`：system + 最近 `recentN*2` 条消息（user/assistant 成对），避开 assistant 孤儿
 - 字符预算：`MAX_TOTAL_CHARS=100k`，超预算继续从最旧丢，始终保留 system
 - 新建任务不要改装配顺序；自定义提示词走任务模板层，不碰 GLOBAL_STYLE
+
+### 翻译类提示词约束（TRANSLATE 的关键陷阱）
+
+新增「整篇翻译」是一次性任务模式的又一实例（`runOneShot('translate')`，复用 `assemble` 非 chat 分支）。真正易错的是**提示词本身**：翻译时模型倾向把 `$E=mc^2$` 里的变量「翻译」成中文、重排公式、或漏掉公式。TRANSLATE 提示词必须用强约束规避：
+
+- **单独成节、祈使句 + 举例**列明「原样保留、不得翻译改写」：数学公式（行内 `$...$`、块级 `$$...$$`，公式内部一字不改）、代码块/行内代码、图表编号标号、参考文献引用标记（`[12]`、`(Author, year)`、`\cite{...}`）。
+- 明确要求**输出用 `$` 形式**（不要 `\(\)`/`\[\]`），与 render.js 数学扩展匹配；显示层 `normalizeLatexDelimiters` 兜底作双保险。
+- 翻译是**忠实全文**：逐段翻译、保留标题层级、不得概括/缩写/漏译。
+
+> 已知限制：整篇一次性翻译受模型单次最大输出 token 限制，超长论文（20+ 页）译文可能被截断；分块续译需处理术语一致性与块边界，属更大改动。
+
+### 新增一次性任务的并行插槽清单
+
+新增一个一次性任务（如 translate）需贯通七处并行插槽，**零新增 CSS、零新增依赖**，且不修改既有任务的任何代码路径：
+
+1. `ai/prompts.js`：`export const <TEMPLATE>`；文件头模板清单补一行。
+2. `ai/context.js`：import + `TASK_TEMPLATES[task]` + `Task` 联合。`assemble()` 无需改（非 chat 分支自动适用）。
+3. `ai/client.js`：`export function <task>(signal){ return runOneShot('<task>', signal); }` + `getPromptTemplates()` 返回项 + 相关 JSDoc。
+4. `config/defaults.js`：import + `Settings` typedef `prompt<Task>` + `DEFAULT_SETTINGS`。
+5. `config/storage.js`：`deepMergeSettings` + `migrateFromFlat` 各加一行 per-field 合并。
+6. `ui/settings.js`：`DEFAULT_TEMPLATES` + 第 N 个 `.settings-field--prompt` 块（须含 `name`/`data-prompt-textarea`/`data-target`/`data-preview` 四者，靠现有按 name 的事件委托自动获得恢复默认/预览/保存，无需新增绑定）+ `syncFormFromStore` + `save()` 收集与 `newSettings`。
+7. `ui/aiPane.js`：`TABS`（一次性 tab 聚拢、chat 留最后）+ `savedResults` + `TAB_LABEL` + `renderAnalyzeTab` 调用 + `runAnalyze` ternary 新增分支 + 各处 `Task` JSDoc/cast。
+8. `state/store.js`：`ui.activeTab` 联合扩成员（默认值不变）。
 
 ### 错误做法
 
@@ -472,3 +495,81 @@ src/
 - 窄屏 960px 断点 → `flex-direction: column` 堆叠，gutter 隐藏，pane 宽度重置
 - PDF 左栏背景 `#525659`（深色模拟阅读器）；AI 右栏 `#fafbfc`
 - KaTeX 公式块：`overflow-x: auto`（防长公式撑爆布局）
+
+---
+
+## 9. PDF 原版渲染：懒加载 + Ctrl+滚轮局部缩放（render.js）
+
+### 倍率模型（关键：不能"只改 scale"）
+
+canvas 默认 CSS 是 `.pane--pdf canvas { max-width:100%; height:auto }`（适应栏宽）。若只把 pdf.js 的 renderScale 调大，位图虽变大但被 `max-width:100%` 压回栏宽 → **视觉尺寸不变，缩放失效**；若直接取消 max-width，默认（未缩放）就会超出栏宽。
+
+解法：以「适应栏宽」为 1× 基准，按 `userZoom` 重渲染并**显式设定显示宽度**：
+
+```js
+const baseVp   = page.getViewport({ scale: 1 });
+const contentW = Math.max(1, container.clientWidth - 2 * PAD_PX); // PAD_PX=16 对齐 .pane__scroll padding
+const fitScale = contentW / baseVp.width;        // 刚好填满栏宽的倍率
+const viewport = page.getViewport({ scale: fitScale * userZoom });
+canvas.width  = Math.round(viewport.width);      // 位图宽 = 显示宽（1:1，文字锐利）
+canvas.height = Math.round(viewport.height);
+canvas.style.width    = viewport.width + 'px';   // 显式显示宽
+canvas.style.maxWidth = 'none';                  // 行内覆盖 CSS 的 max-width:100%
+```
+
+- `userZoom=1`：显示宽 = contentW → 等价「适应栏宽」，默认体验不变。
+- `userZoom>1`：显示宽 > contentW → 超出栏宽，`.pane__scroll { overflow:auto }` 出滚动条。
+- CSS 的 `max-width:100%` **保留**作降级兜底（行内 `maxWidth:none` 优先级更高，无需删 CSS 规则）。
+
+### 可重渲染的懒加载（renderedZoom Map）
+
+单一 `rendered: Set` 不够（缩放后已渲染页需重渲染）。改用 **per-page 记录上次渲染时的 userZoom**：
+
+```js
+const renderedZoom = new Map(); // pageNum -> 渲染时的 userZoom
+if (renderedZoom.get(num) === zoom) return;       // 幂等：zoom 不匹配才渲染
+// ...await page.render...
+if (userZoom === zoom) renderedZoom.set(num, zoom); // 仅当 userZoom 仍是本次目标时才标记
+```
+
+- 「仅当 `userZoom === zoom` 才写」防止 `await page.render()` 期间 userZoom 再变导致 **stale 写入**（否则旧 zoom 被记下，后续跳过本应发生的重渲染）。
+- IO 回调照旧调 renderPageInto：可见页 zoom 不匹配就重渲染，匹配则跳过。
+
+### 局部 Ctrl+滚轮缩放（防浏览器整页缩放）
+
+```js
+container.addEventListener('wheel', onWheel, { passive: false }); // 必须非 passive 才能 preventDefault
+const onWheel = (e) => {
+  if (!e.ctrlKey && !e.metaKey) return; // 非 Ctrl 放行，保留普通滚动（绝不 preventDefault）
+  e.preventDefault();                    // 每个 Ctrl tick 都 preventDefault（即便节流未触发渲染）
+  // nextZoom = clamp(userZoom × step^dir)；leading+trailing 节流（≈80ms）调 applyZoom
+};
+```
+
+- 监听绑在 **container（`#pdf-scroll` 滚动容器）**，绝不绑 `window`/`document`（否则影响其它栏）。
+- 缩放逻辑全部封装在 render.js 内（`cleanup` 一并 `removeEventListener` + 清 trailing timer）；main.js 只消费返回 handle 的 `setZoom/getZoom`——满足 `pdf/` 不依赖 `ui/`。
+- 切换 PDF 时 main.js 先调旧 handle 的 `cleanup()` 再建新闭包（userZoom 重置 1.0、新监听绑定），无跨文件泄漏。
+
+### 向光标处缩放（锚点）
+
+```js
+// 重渲染【前】记录
+f = clamp((e.clientY - canvasRect.top) / canvasRect.height, 0, 1); // 光标在锚定页内的纵向比例
+viewportY = e.clientY - container.getBoundingClientRect().top;       // 光标在容器视口内的 y
+// 更新 userZoom → await 重渲染【可见页】→ 重算 scrollTop（用重排后真实 getBoundingClientRect）
+holderTopInScroll = anchoredHolder.getBoundingClientRect().top - containerRect.top + container.scrollTop;
+container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
+```
+
+- **非可见页不即时重渲染**（保留旧 canvas → 高度不变 → 上方位移稳定 → 锚点准），等滚动进入视口由 IO 按当前 userZoom 补渲染。
+- 用重排后真实 `getBoundingClientRect` 算 `holderTopInScroll`，自动吸收「上方可见页也被重渲染导致的高度变化」，无需枚举哪些页重渲染过。
+- 找不到锚定页（光标在 padding/间隙）→ 跳过锚点、保持当前 scrollTop（可接受的降级，不抛错）。
+
+### 错误做法
+
+- ❌ wheel 监听用默认 passive（无法 preventDefault，整页仍被浏览器缩放）。
+- ❌ 非 Ctrl 也 preventDefault（破坏普通滚动与可访问性）。
+- ❌ 只改 renderScale 不动 CSS max-width（放大被压回栏宽，缩放失效）。
+- ❌ 用 CSS transform 缩放 canvas（不撑布局 → 无滚动条、被裁切；位图不足时发虚）。
+- ❌ 缩放即清空/全量重渲染所有页（性能爆炸 + 锚点 offsetTop 失稳）。
+- ❌ 把 wheel 监听绑 `window`/`document`（影响其它栏）；或缩放逻辑泄漏到 main.js（违反单向依赖）。

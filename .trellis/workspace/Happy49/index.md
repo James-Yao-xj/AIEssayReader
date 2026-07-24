@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
-- **Last Active**: 2026-07-23
+- **Total Sessions**: 8
+- **Last Active**: 2026-07-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~207 | Active |
+| `journal-1.md` | ~273 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-07-24 | 翻译面板：第五个 tab，文献中译 | `0667e45` | `dev/Translation` |
+| 7 | 2026-07-24 | PDF Ctrl+滚轮独立缩放：实现与收尾 | `fe09c4a` | `dev/Translation` |
 | 6 | 2026-07-23 | 版面最小化 + LaTeX 公式定界符归一化 | `1f7fd61`, `a1b8c92`, `6a9e38d` | `chore/MinimizeSomePages` |
 | 5 | 2026-07-23 | 设置界面 UI 美化：去 Emoji + 模型配置改为卡片与滑入抽屉 | `2c72f20` | `chore/Settings_UI_enhancement` |
 | 4 | 2026-07-22 | 增加白天/黑夜模式切换 | `bc40d78` | `dev/黑色模式` |

@@ -25,7 +25,7 @@
  *   paper: Paper | null,
  *   settings: import('../config/defaults.js').Settings,
  *   messages: ChatMessage[],
- *   ui: { activeTab: 'summarize' | 'explainConcepts' | 'critique' | 'chat', busy: boolean, quickAsk: string | null },
+ *   ui: { activeTab: 'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat', busy: boolean, quickAsk: string | null },
  * }} State
  */
 

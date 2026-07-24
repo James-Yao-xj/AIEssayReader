@@ -5,8 +5,8 @@
  *
  * - 从 store 取 settings + paper + messages
  * - 调 context.assemble + provider（默认 openai.js）
- * - 暴露：summarize() / explainConcepts() / critique() / chat(userText)
- *   前三者返回一次性任务的 AsyncIterable<string>（流式）；
+ * - 暴露：summarize() / explainConcepts() / critique() / translate() / chat(userText)
+ *   前四者返回一次性任务的 AsyncIterable<string>（流式）；
  *   chat 同样流式，且：
  *     ① 流式开始前把 userText 入 store.messages
  *     ② 流式结束后把 assistant 全文入 store.messages
@@ -22,7 +22,7 @@ import { assemble } from './context.js';
  * templates 映射。若用户未自定义某字段（空串/undefined），assemble() 会回退
  * 到 prompts.js 内置默认模板。
  *
- * @returns {Partial<Record<'summarize' | 'explainConcepts' | 'critique' | 'chat', string>>}
+ * @returns {Partial<Record<'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat', string>>}
  */
 function getPromptTemplates() {
   const { settings } = getState();
@@ -30,6 +30,7 @@ function getPromptTemplates() {
     summarize: settings.promptSummarize,
     explainConcepts: settings.promptExplainConcepts,
     critique: settings.promptCritique,
+    translate: settings.promptTranslate,
     chat: settings.promptChat,
   };
 }
@@ -76,7 +77,7 @@ function makeProvider(opts) {
 
 /**
  * 通用一次性任务流式入口。
- * @param {'summarize' | 'explainConcepts' | 'critique'} task
+ * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate'} task
  * @param {AbortSignal} [signal]
  * @returns {AsyncIterable<string>}
  */
@@ -112,6 +113,15 @@ export function explainConcepts(signal) {
  */
 export function critique(signal) {
   return runOneShot('critique', signal);
+}
+
+/**
+ * 把论文全文翻译成中文（流式）。
+ * @param {AbortSignal} [signal]
+ * @returns {AsyncIterable<string>}
+ */
+export function translate(signal) {
+  return runOneShot('translate', signal);
 }
 
 /**
