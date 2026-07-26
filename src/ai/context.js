@@ -27,6 +27,13 @@ import {
  */
 const MAX_TOTAL_CHARS = 100_000;
 
+/**
+ * 对话模式下，至少为 messages 保留的字符预算。
+ * 确保论文再长也不会把用户消息挤掉。
+ * 4000 字符 ≈ 1000 tokens，足够容纳一轮完整问答。
+ */
+const MIN_MESSAGE_BUDGET = 4_000;
+
 /** 粗略 token 估算：英文 ~4 字符/token，中文偏多，这里统一按 4 估。 */
 const CHARS_PER_TOKEN = 4;
 
@@ -64,9 +71,19 @@ export function assemble({ task, paper, messages = [], recentN = 8, templates })
     typeof raw === 'string' && raw.trim() ? raw.trim() : (TASK_TEMPLATES[task] || '');
   const paperText = paper?.fullText || '';
 
-  const systemContent = buildSystem({ paperText, taskTemplate });
+  let systemContent = buildSystem({ paperText, taskTemplate });
 
   if (task === 'chat') {
+    // 当论文过长挤占消息预算时，截断论文文本以保证对话空间
+    if (systemContent.length > MAX_TOTAL_CHARS - MIN_MESSAGE_BUDGET) {
+      // 计算非论文部分的开销（GLOBAL_STYLE + 引导语 + 分隔符 + taskTemplate）
+      const overhead = systemContent.length - paperText.length;
+      const maxPaperChars = Math.max(0, MAX_TOTAL_CHARS - MIN_MESSAGE_BUDGET - overhead);
+      const truncatedPaper =
+        paperText.slice(0, maxPaperChars) +
+        '\n\n[论文过长，已截断尾部以保留对话空间。若需讨论后半部分，请在左侧目录跳转到对应章节后重新追问。]';
+      systemContent = buildSystem({ paperText: truncatedPaper, taskTemplate });
+    }
     const budget = Math.max(0, MAX_TOTAL_CHARS - systemContent.length);
     const recent = slideWindow(messages, recentN, budget);
     return [{ role: 'system', content: systemContent }, ...recent];
@@ -134,9 +151,9 @@ function slideWindow(messages, recentN, budget) {
   /** @type {typeof messages} */
   let picked = messages.slice(start);
 
-  // 字符预算裁剪
+  // 字符预算裁剪：从最旧开始丢弃，但至少保留最后一条消息（当前用户提问）
   let total = picked.reduce((s, m) => s + (m.content?.length || 0), 0);
-  while (picked.length > 0 && total > budget) {
+  while (picked.length > 1 && total > budget) {
     const removed = picked.shift();
     if (!removed) break;
     total -= removed.content?.length || 0;
