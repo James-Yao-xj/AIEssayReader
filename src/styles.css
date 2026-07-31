@@ -755,6 +755,287 @@ body {
   border-top: 1px solid #e3e6eb;
 }
 
+/* ---------- 存档管理对话框 ---------- */
+.archive-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10003;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.archive-dialog {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  width: 500px;
+  max-width: 94vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.archive-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e3e6eb;
+  flex: 0 0 auto;
+}
+
+.archive-dialog__header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #1f2328;
+}
+
+.archive-dialog__close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6e7681;
+  padding: 0 4px;
+  font-family: inherit;
+}
+
+.archive-dialog__close:hover {
+  color: #1f2328;
+}
+
+.archive-dialog__body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.archive-dialog__save-section {
+  display: flex;
+  justify-content: center;
+}
+
+.archive-dialog__save-section .ai-btn {
+  min-width: 160px;
+}
+
+.archive-dialog__divider {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e7681;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e3e6eb;
+}
+
+.archive-dialog__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.archive-dialog__empty {
+  text-align: center;
+  color: #8b949e;
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+.archive-dialog__footer {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border-top: 1px solid #e3e6eb;
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* ---- 存档列表项 ---- */
+.archive-item {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fafbfc;
+  transition: border-color 0.15s;
+}
+
+.archive-item:hover {
+  border-color: #0d6efd;
+}
+
+.archive-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.archive-item__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2328;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-item__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.archive-item__indicators {
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.archive-item__time {
+  font-size: 11px;
+  color: #8b949e;
+  white-space: nowrap;
+}
+
+.archive-indicator {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f0f2f5;
+  color: #8b949e;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.archive-indicator--on {
+  background: #e6f4ea;
+  color: #1a7d3a;
+}
+
+.archive-item__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.archive-item__btn {
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+}
+
+.archive-item__btn--danger {
+  color: #c53030 !important;
+  border-color: #ffcccc !important;
+}
+
+.archive-item__btn--danger:hover:not(:disabled) {
+  background: #fff0f0 !important;
+}
+
+/* ---- 存档对话框滚动条 ---- */
+.archive-dialog__body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.archive-dialog__body::-webkit-scrollbar-thumb {
+  background: #d0d7de;
+  border-radius: 3px;
+}
+
+.archive-dialog__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 黑夜模式：存档对话框 ---------- */
+[data-theme="dark"] .archive-dialog-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .archive-dialog {
+  background: #16213e;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .archive-dialog__header {
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .archive-dialog__header h3 {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .archive-dialog__close {
+  color: #a0a0b0;
+}
+
+[data-theme="dark"] .archive-dialog__close:hover {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .archive-dialog__divider {
+  color: #a0a0b0;
+  border-bottom-color: #2a2a4a;
+}
+
+[data-theme="dark"] .archive-dialog__empty {
+  color: #6a6a7a;
+}
+
+[data-theme="dark"] .archive-dialog__footer {
+  border-top-color: #2a2a4a;
+}
+
+[data-theme="dark"] .archive-item {
+  border-color: #3a3a5a;
+  background: #1e1e3a;
+}
+
+[data-theme="dark"] .archive-item:hover {
+  border-color: #4a9eff;
+}
+
+[data-theme="dark"] .archive-item__title {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .archive-item__time {
+  color: #6a6a7a;
+}
+
+[data-theme="dark"] .archive-indicator {
+  background: #2a2a4a;
+  color: #6a6a7a;
+}
+
+[data-theme="dark"] .archive-indicator--on {
+  background: #143020;
+  color: #6fd97a;
+}
+
+[data-theme="dark"] .archive-item__btn--danger {
+  color: #ff8b8b !important;
+  border-color: #5a2a2a !important;
+}
+
+[data-theme="dark"] .archive-item__btn--danger:hover:not(:disabled) {
+  background: #2a1515 !important;
+}
+
+[data-theme="dark"] .archive-dialog__body::-webkit-scrollbar-thumb {
+  background: #3a3a5a;
+}
+
+[data-theme="dark"] .archive-dialog__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* ---------- 三栏主体 ---------- */
 .app-main {
   flex: 1 1 auto;

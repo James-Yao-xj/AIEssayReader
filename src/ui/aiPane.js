@@ -51,6 +51,50 @@ const TAB_LABEL = /** @type {Record<string, string>} */ ({
   chat: '对话',
 });
 
+// ---------- 存档功能接口 ----------
+
+/**
+ * 获取当前所有分析 tab 的已生成结果快照（供存档使用）。
+ * @returns {Record<string, string>}
+ */
+export function getSavedResults() {
+  return { ...savedResults };
+}
+
+/**
+ * 恢复分析 tab 结果（供存档恢复使用）。
+ * 写入后同步各 tab 保存按钮状态。
+ * @param {Record<string, string>} rs
+ */
+export function setSavedResults(rs) {
+  const tasks = /** @type {const} */ (['summarize', 'explainConcepts', 'critique', 'translate']);
+  for (const t of tasks) {
+    if (typeof rs[t] === 'string') savedResults[t] = rs[t];
+  }
+  for (const t of tasks) syncSaveButton(t);
+}
+
+/**
+ * 存档恢复后刷新 UI：重渲染对话列表、更新保存按钮、切到有内容的 tab。
+ */
+export function refreshAfterRestore() {
+  renderChatList();
+  const tasks = /** @type {const} */ (['summarize', 'explainConcepts', 'critique', 'translate']);
+  for (const t of tasks) syncSaveButton(t);
+  syncChatSaveButton();
+
+  // 切换到第一个有内容的 tab（优先分析 tab，其次对话）
+  for (const t of tasks) {
+    if (savedResults[t]) {
+      setState({ ui: { ...getState().ui, activeTab: t } });
+      return;
+    }
+  }
+  if (getState().messages.length > 0) {
+    setState({ ui: { ...getState().ui, activeTab: 'chat' } });
+  }
+}
+
 // ---------- 保存/下载工具 ----------
 
 /**
