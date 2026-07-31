@@ -271,3 +271,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 实现存档功能——按论文标题归档对话、翻译等生成内容
+
+**Date**: 2026-07-31
+**Task**: 实现存档功能——按论文标题归档对话、翻译等生成内容
+**Branch**: `dev/存档`
+
+### Summary
+
+新增存档功能：IndexedDB 持久化存储，顶栏按钮打开管理对话框，支持保存当前/恢复/删除/导出 JSON/导入 JSON。新增 src/archive/db.js + manager.js + ui/archiveDialog.js，修改 aiPane.js/main.js/index.html/styles.css。更新 spec 新增 IndexedDB 持久化模式文档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `851e732` | (see git log) |
+| `5934280` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
