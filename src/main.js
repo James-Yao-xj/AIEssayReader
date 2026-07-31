@@ -29,6 +29,7 @@ import { initAiPane } from './ui/aiPane.js';
 import { initTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
 import { initPaneResize } from './ui/paneResize.js';
 import { initPaneCollapse } from './ui/paneCollapse.js';
+import { initArchiveButton } from './ui/archiveDialog.js';
 import { extractWithVision } from './pdf/vision.js';
 import { describeErr } from './utils/errors.js';
 
@@ -410,6 +411,9 @@ initPaneResize();
 
 // 1.8) 初始化 PDF / 文字栏的最小化（收成竖条 + 比例重分配）
 initPaneCollapse();
+
+// 1.9) 初始化存档按钮（顶栏 → 存档管理对话框）
+initArchiveButton();
 
 // 2) 加载持久化设置写入 store
 setState({ settings: loadSettings() });

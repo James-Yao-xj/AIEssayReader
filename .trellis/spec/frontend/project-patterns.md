@@ -451,7 +451,73 @@ baseSumNonMin = Σ base[i] for 非最小化栏 i   （为 0 则取 1 防除零�
 
 ---
 
-## 7. 文件结构约定
+## 10. IndexedDB 持久化模式
+
+### 何时用 IndexedDB 而非 localStorage
+
+| 场景 | 选择 | 原因 |
+|------|------|------|
+| 设置项（少量 KV） | localStorage | 同步读取、数据小、写频率低 |
+| 大文本/数组数据 | IndexedDB | 无 5-10MB 限制、支持索引、异步不阻塞 UI |
+| 用户生成内容存档 | IndexedDB | 单条记录可超 MB 级、需按时间排序、支持增删查 |
+
+### CRUD 封装模式
+
+```js
+// src/archive/db.js — Promise 包装原生 IndexedDB API
+const DB_NAME = 'aie-archives';
+const DB_VERSION = 1;
+let dbHandle = null; // 缓存句柄，避免重复 open
+
+function openDB() {
+  if (dbHandle) return Promise.resolve(dbHandle); // 幂等
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+    };
+    req.onsuccess = (event) => {
+      dbHandle = event.target.result;
+      dbHandle.onclose = () => { dbHandle = null; }; // 自动重建
+      resolve(dbHandle);
+    };
+    req.onerror = () => reject(new Error(`…${req.error?.message}`));
+    req.onblocked = () => reject(new Error('被其他标签页阻塞'));
+  });
+}
+
+// 每个操作：openDB() → transaction → 返回 Promise
+export async function saveArchive(record) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).add(record).onsuccess = (e) => resolve(e.target.result);
+    tx.onerror = () => reject(/* … */);
+  });
+}
+```
+
+### 关键约定
+
+- **不在 `onupgradeneeded` 外创建 store/index**：schema 变更靠 `DB_VERSION` 递增 + `onupgradeneeded` 分支
+- **缓存 db 句柄**：避免每次操作都 open（open 是异步的）。`db.onclose` 时置 null 自动重建
+- **每个 CRUD 方法返回 Promise**：对齐 `async/await` 调用方
+- **错误消息包含上下文**：`req.error?.message` 而非 "未知错误"
+
+### 错误做法
+
+- ❌ 用 localStorage 存大文本/数组（超配额静默失败，各浏览器行为不一致）
+- ❌ 在 `onupgradeneeded` 外 `createObjectStore`（会抛 `InvalidStateError`）
+- ❌ 不设 `req.onblocked`（其他标签页持有旧版本连接时静默卡死）
+- ❌ 同步封装 IndexedDB（如用 `Promise.resolve()` 包同步调用——实际 API 全是异步的）
+
+---
+
+## 11. 文件结构约定
 
 ```
 src/
@@ -464,6 +530,9 @@ src/
 │   ├── prompts.js       提示词
 │   ├── context.js       上下文装配 + 滑窗
 │   └── client.js        高层入口（UI 唯一调用 AI 的入口）
+├── archive/              存档功能（依赖 state/ + ui/aiPane）
+│   ├── db.js            IndexedDB CRUD 封装
+│   └── manager.js       业务逻辑：保存/恢复/导出/导入
 ├── state/
 │   └── store.js         pub/sub store
 ├── config/
@@ -471,9 +540,11 @@ src/
 │   └── storage.js       localStorage 读写
 ├── ui/
 │   ├── aiPane.js        右栏 AI 面板
+│   ├── archiveDialog.js 存档管理对话框
 │   ├── render.js        Markdown + KaTeX 渲染
 │   ├── settings.js      设置面板 modal
 │   ├── paneResize.js    三栏拖拽调整宽度
+│   ├── paneCollapse.js  版面最小化
 │   └── textPane.js      中栏文本 + 追问联动
 └── utils/
     └── errors.js        跨模块共享工具
