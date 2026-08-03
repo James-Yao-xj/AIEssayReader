@@ -15,7 +15,8 @@
 
 import { getState, setState } from '../state/store.js';
 import { createProvider } from './openai.js';
-import { assemble } from './context.js';
+import { assemble, SUMMARIZE_THRESHOLD, getLastRetrievedIndices } from './context.js';
+import { SUMMARIZE_CONVERSATION } from './prompts.js';
 
 /**
  * 从 store.settings 读取用户自定义提示词，构建与 context.assemble() 兼容的
@@ -143,7 +144,7 @@ export async function* chat(userText, signal) {
   // 前置校验（在写入 store 之前）
   makeProvider({ requirePaper: true });
 
-  const { paper, messages } = getState();
+  const { paper, messages, conversationSummary, retrievedChunkIndices } = getState();
   const messagesWithUser = [
     ...messages,
     { role: /** @type {const} */ ('user'), content: text },
@@ -156,7 +157,17 @@ export async function* chat(userText, signal) {
     paper,
     messages: messagesWithUser,
     templates: getPromptTemplates(),
+    conversationSummary: conversationSummary?.text || null,
+    retrievedChunkIndices,
   });
+
+  // 累积模式：保存本轮检索选中的段落索引，供下一轮加分使用
+  const newRetrievedIndices = getLastRetrievedIndices();
+  if (newRetrievedIndices.length > 0) {
+    // 合并去重：将新旧索引合并（不覆盖 store，在 setState 中原子更新）
+    const merged = [...new Set([...retrievedChunkIndices, ...newRetrievedIndices])];
+    setState({ retrievedChunkIndices: merged });
+  }
 
   let assistantText = '';
   try {
@@ -178,5 +189,105 @@ export async function* chat(userText, signal) {
         { role: /** @type {const} */ ('assistant'), content: assistantText },
       ],
     });
+
+    // 对话溢出时触发摘要压缩（阻塞等待，保证下次发送时摘要已就绪）
+    await maybeSummarize();
+
+    // 更新状态栏指示
+    updateChatStatus();
   }
+}
+
+// =========================================================
+// 对话摘要压缩
+// =========================================================
+
+/**
+ * 将消息列表格式化为可读文本，供摘要 LLM 使用。
+ * @param {Array<{ role: string, content: string }>} msgs
+ * @returns {string}
+ */
+function formatMessagesForSummary(msgs) {
+  return msgs
+    .map((m) => {
+      const label = m.role === 'user' ? '🧑 用户' : '🤖 AI';
+      return `### ${label}\n${(m.content || '').trim()}`;
+    })
+    .join('\n\n');
+}
+
+/**
+ * 检查并触发对话摘要压缩。
+ * 当 store.messages 超过 SUMMARIZE_THRESHOLD 时，对溢出消息生成摘要，
+ * 合并已有摘要后存入 store.conversationSummary。
+ *
+ * 增量模式：只压缩"上次已压缩位置"之后的新溢出消息，避免重复发送。
+ * 摘要生成失败不抛错——下次发送时退化为无摘要模式（旧消息被滑窗丢弃）。
+ *
+ * @returns {Promise<void>}
+ */
+async function maybeSummarize() {
+  const { messages, conversationSummary } = getState();
+
+  if (messages.length <= SUMMARIZE_THRESHOLD) return;
+
+  // 已压缩到的位置（无摘要时为 0）
+  const prevUpTo = conversationSummary?.summarizedUpTo ?? 0;
+  // 当前应压缩到的最远位置：总消息数 - 阈值（保证窗口内保留 SUMMARIZE_THRESHOLD 条完整消息）
+  const overflowEnd = messages.length - SUMMARIZE_THRESHOLD;
+
+  // 没有新增溢出消息，无需压缩
+  if (overflowEnd <= prevUpTo) return;
+
+  const newOverflow = messages.slice(prevUpTo, overflowEnd);
+  if (newOverflow.length === 0) return;
+
+  const prevSummary = conversationSummary?.text || '';
+  const summaryPrompt = prevSummary
+    ? `已有对话摘要：\n${prevSummary}\n\n请将以下新增对话合并到摘要中，输出一份完整的更新摘要：\n\n${formatMessagesForSummary(newOverflow)}`
+    : `请为以下对话生成摘要：\n\n${formatMessagesForSummary(newOverflow)}`;
+
+  try {
+    const provider = makeProvider({ requirePaper: false });
+    const newSummary = await provider.chatOnce(
+      [
+        { role: 'system', content: SUMMARIZE_CONVERSATION },
+        { role: 'user', content: summaryPrompt },
+      ],
+      { stream: false },
+    );
+
+    const trimmed = (newSummary || '').trim();
+    if (trimmed) {
+      setState({
+        conversationSummary: {
+          text: trimmed,
+          summarizedUpTo: overflowEnd,
+        },
+      });
+    }
+  } catch (err) {
+    // 非致命：摘要失败时下次发送退化为普通滑窗（旧消息被丢弃）
+    console.warn('[Summarize] 对话摘要生成失败，下次将退化为无摘要模式：', err);
+  }
+}
+
+/**
+ * 更新 chatStatus 状态栏文本，供 UI 展示三层上下文管理状态。
+ */
+function updateChatStatus() {
+  const { retrievedChunkIndices, conversationSummary } = getState();
+  const parts = [];
+
+  if (retrievedChunkIndices.length > 0) {
+    parts.push(`检索: ${retrievedChunkIndices.length} 段论文已加载`);
+  }
+
+  if (conversationSummary && conversationSummary.summarizedUpTo > 0) {
+    parts.push(`摘要: ${conversationSummary.summarizedUpTo} 条消息已压缩`);
+  }
+
+  setState({
+    chatStatus: parts.length > 0 ? { text: parts.join(' | ') } : null,
+  });
 }
