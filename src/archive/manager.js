@@ -81,6 +81,10 @@ export function restoreArchive(record) {
       pages: [],
     },
     messages: record.messages || [],
+    // 存档恢复：清空检索索引与摘要（论文全文不可恢复，旧索引无意义）
+    conversationSummary: null,
+    retrievedChunkIndices: [],
+    chatStatus: null,
   });
 
   // 恢复分析结果

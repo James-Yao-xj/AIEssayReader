@@ -321,6 +321,23 @@ function syncChatSaveButton() {
   }
 }
 
+/**
+ * 同步对话状态栏：显示检索/摘要的运行状态。
+ * @param {null | { text: string }} status
+ */
+function syncChatStatus(status) {
+  if (!root) return;
+  const el = root.querySelector('[data-chat-status]');
+  if (!el) return;
+  if (status && status.text) {
+    el.textContent = status.text;
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
+
 // =========================================================
 // 下载选项对话框
 // =========================================================
@@ -502,6 +519,7 @@ export function initAiPane() {
     syncTabs(s.ui.activeTab);
     syncBusy(s.ui.busy);
     syncChatSaveButton();
+    syncChatStatus(s.chatStatus);
     // 中栏追问联动：textPane 设置 quickAsk + 切到 chat tab
     if (s.ui.quickAsk && s.ui.activeTab === 'chat' && !s.ui.busy) {
       const text = s.ui.quickAsk;
@@ -555,6 +573,7 @@ function renderChatTab() {
     <section class="ai-pane__section ai-pane__section--chat" data-section="chat" hidden>
       <div class="ai-error" data-error hidden></div>
       <div class="chat-list" data-chat-list></div>
+      <div class="chat-status" data-chat-status hidden></div>
       <div class="chat-composer">
         <textarea class="chat-input" data-chat-input rows="2"
           placeholder="基于当前论文提问…（Enter 发送 · Shift+Enter 换行）"></textarea>

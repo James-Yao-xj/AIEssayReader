@@ -25,6 +25,9 @@
  *   paper: Paper | null,
  *   settings: import('../config/defaults.js').Settings,
  *   messages: ChatMessage[],
+ *   conversationSummary: null | { text: string, summarizedUpTo: number },
+  retrievedChunkIndices: number[],
+  chatStatus: null | { text: string },
  *   ui: { activeTab: 'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat', busy: boolean, quickAsk: string | null },
  * }} State
  */
@@ -47,6 +50,9 @@ let state = {
     },
   },
   messages: [],
+  conversationSummary: null,
+  retrievedChunkIndices: [],
+  chatStatus: null,
   ui: { activeTab: 'summarize', busy: false, quickAsk: null },
 };
 

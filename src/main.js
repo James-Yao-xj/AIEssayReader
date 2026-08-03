@@ -184,6 +184,11 @@ async function loadPdf(file) {
             fullText: result.fullText,
             pages: result.pages || [],
           },
+          // 新论文加载：清空旧论文的对话状态
+          messages: [],
+          conversationSummary: null,
+          retrievedChunkIndices: [],
+          chatStatus: null,
         });
         // 注册 AI 视觉识别按钮回调
         setupVisionHandler(file);
@@ -249,6 +254,11 @@ function setupVisionHandler(file) {
           fullText: result.fullText,
           pages: result.pages || [],
         },
+        // 新论文加载：清空旧论文的对话状态
+        messages: [],
+        conversationSummary: null,
+        retrievedChunkIndices: [],
+        chatStatus: null,
       });
 
       const meta = result.meta || {};
