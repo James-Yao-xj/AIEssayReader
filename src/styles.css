@@ -2403,3 +2403,201 @@ body {
 [data-theme="dark"] .pane {
   border-bottom-color: #2a2a4a;
 }
+
+/* =========================================================
+   相关论文 tab（Hallmark · 组件级）
+   scope: component · genre: utilitarian · tone: technical · theme: inherited
+   只约束本功能新增组件，不改写既有设计系统；新组件内引用 --rel-* 变量，不内联裸色值。
+   ========================================================= */
+
+:root {
+  --rel-accent: #0d6efd;
+  --rel-accent-hover: #0b5ed7;
+  --rel-text: #1f2328;
+  --rel-muted: #6e7681;
+  --rel-border: #d0d7de;
+  --rel-surface: #ffffff;
+  --rel-surface-2: #f0f2f5;
+  --rel-badge-bg: #e6f4ea;
+  --rel-badge-fg: #1a7d3a;
+  --rel-focus: #0d6efd;
+  --rel-focus-ring: rgba(13, 110, 253, 0.25);
+}
+
+[data-theme="dark"] {
+  --rel-accent: #4a9eff;
+  --rel-accent-hover: #3a7eef;
+  --rel-text: #e0e0e0;
+  --rel-muted: #a0a0b0;
+  --rel-border: #3a3a5a;
+  --rel-surface: #1e1e3a;
+  --rel-surface-2: #2a2a4a;
+  --rel-badge-bg: #143020;
+  --rel-badge-fg: #6fd97a;
+  --rel-focus: #4a9eff;
+  --rel-focus-ring: rgba(74, 158, 255, 0.25);
+}
+
+/* ---- 搜索框 + 检索按钮 ---- */
+.related-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.related-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  color: var(--rel-text);
+  background: var(--rel-surface);
+  border: 1px solid var(--rel-border);
+  border-radius: 6px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.related-search__input::placeholder {
+  color: var(--rel-muted);
+}
+.related-search__input:hover {
+  border-color: var(--rel-muted);
+}
+.related-search__input:focus-visible {
+  outline: none;
+  border-color: var(--rel-focus);
+  box-shadow: 0 0 0 2px var(--rel-focus-ring);
+}
+
+.related-search .ai-btn:focus-visible {
+  outline: 2px solid var(--rel-focus);
+  outline-offset: 1px;
+}
+.related-search .ai-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ---- 状态提示 ---- */
+.related-status {
+  font-size: 12px;
+  color: var(--rel-muted);
+  margin-bottom: 8px;
+}
+.related-status[hidden] {
+  display: none;
+}
+
+/* ---- 结果容器 + 分组 ---- */
+.related-results {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.related-group__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rel-text);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rel-border);
+}
+
+.related-empty {
+  font-size: 12px;
+  color: var(--rel-muted);
+  padding: 4px 0;
+}
+
+/* ---- 单条结果 ---- */
+.related-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.related-item:last-child {
+  border-bottom: none;
+}
+
+.related-item__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--rel-accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.related-item__title:hover {
+  text-decoration: underline;
+}
+.related-item__title:focus-visible {
+  outline: 2px solid var(--rel-focus);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.related-item__title:not([href]) {
+  color: var(--rel-text);
+  cursor: default;
+}
+
+.related-item__meta {
+  font-size: 11px;
+  color: var(--rel-muted);
+  line-height: 1.5;
+}
+
+.related-item__abstract {
+  font-size: 12px;
+  color: var(--rel-muted);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- 「有代码」徽标 ---- */
+.related-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  color: var(--rel-badge-fg);
+  background: var(--rel-badge-bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.related-badge[hidden] {
+  display: none;
+}
+.related-badge:hover {
+  text-decoration: underline;
+}
+.related-badge:focus-visible {
+  outline: 2px solid var(--rel-focus);
+  outline-offset: 1px;
+}
+
+/* ---- 设置面板「论文检索」fieldset 左边框（可选 Key） ---- */
+.settings-fieldset--related {
+  border-left: 3px solid #d29922;
+}
+
+/* ---- 减少动效偏好 ---- */
+@media (prefers-reduced-motion: reduce) {
+  .related-search__input,
+  .related-search .ai-btn {
+    transition: none;
+  }
+  .related-search .ai-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
