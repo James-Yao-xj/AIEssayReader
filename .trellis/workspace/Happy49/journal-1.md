@@ -305,3 +305,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 论文相关文献检索（找相关论文）
+
+**Date**: 2026-08-17
+**Task**: 论文相关文献检索（找相关论文）
+**Branch**: `dev/realted`
+
+### Summary
+
+规划并实现「找相关论文」功能：AI 面板新增相关论文 Tab，调 Semantic Scholar（相似推荐+引用网络）+ GitHub 轻量代码徽标；新增可选 S2 API Key；前端采用 Hallmark 组件级规范。npm run build 通过，输入解析与方法名提取逻辑经 node 校验通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a37221b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

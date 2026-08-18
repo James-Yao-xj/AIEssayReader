@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
-- **Last Active**: 2026-07-31
+- **Total Sessions**: 10
+- **Last Active**: 2026-08-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~307 | Active |
+| `journal-1.md` | ~340 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-08-17 | 论文相关文献检索（找相关论文） | `a37221b` | `dev/realted` |
 | 9 | 2026-07-31 | 实现存档功能——按论文标题归档对话、翻译等生成内容 | `851e732`, `5934280` | `dev/存档` |
 | 8 | 2026-07-24 | 翻译面板：第五个 tab，文献中译 | `0667e45` | `dev/Translation` |
 | 7 | 2026-07-24 | PDF Ctrl+滚轮独立缩放：实现与收尾 | `fe09c4a` | `dev/Translation` |

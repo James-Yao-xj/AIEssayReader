@@ -106,6 +106,17 @@ export function initSettings() {
                   <span class="settings-field__hint">12~24px，控制中栏文本和 AI 面板的字体大小。</span>
                 </label>
               </fieldset>
+
+              <!-- 论文检索（可选）：Semantic Scholar API Key -->
+              <fieldset class="settings-fieldset settings-fieldset--related">
+                <legend class="settings-fieldset__legend">论文检索（可选）</legend>
+                <p class="settings-fieldset__desc">用于「相关论文」检索的 Semantic Scholar API Key，提升检索配额（不填则用匿名，易限流）。</p>
+                <label class="settings-field">
+                  <span class="settings-field__label">Semantic Scholar API Key</span>
+                  <input type="password" name="s2ApiKey" autocomplete="off" spellcheck="false" />
+                  <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改。</span>
+                </label>
+              </fieldset>
             </div>
 
             <!-- 右侧滑入抽屉：两组模型字段都渲染在此 form 内，按当前抽屉只显示一组 -->
@@ -415,6 +426,9 @@ function syncFormFromStore() {
   // 字体大小
   setFieldValue('fontSize', String(settings.fontSize ?? 14));
 
+  // Semantic Scholar API Key（永不回显明文）
+  syncApiKeyField('s2ApiKey', settings.s2ApiKey, '可选，留空用匿名配额');
+
   // 提示词模板：自定义优先，无自定义则用默认值填充
   setFieldValue('promptSummarize', settings.promptSummarize || DEFAULT_TEMPLATES.promptSummarize);
   setFieldValue('promptExplainConcepts', settings.promptExplainConcepts || DEFAULT_TEMPLATES.promptExplainConcepts);
@@ -432,8 +446,9 @@ function syncFormFromStore() {
  * 同步单个 apiKey 输入框：值永远置空，placeholder 根据是否已配置决定。
  * @param {string} name - 表单字段名（如 "recognition.apiKey"）
  * @param {string|undefined} storedKey - localStorage 中的 apiKey 值
+ * @param {string} [emptyPlaceholder] - 未配置时的占位提示（默认 "sk-..."）
  */
-function syncApiKeyField(name, storedKey) {
+function syncApiKeyField(name, storedKey, emptyPlaceholder = 'sk-...') {
   if (!formEl) return;
   const input = /** @type {HTMLInputElement} */ (
     formEl.elements.namedItem(name)
@@ -442,7 +457,7 @@ function syncApiKeyField(name, storedKey) {
   input.value = '';
   input.placeholder = storedKey
     ? '已配置（留空则不修改）'
-    : 'sk-...';
+    : emptyPlaceholder;
 }
 
 /**
@@ -648,6 +663,9 @@ async function save() {
   const fontSizeRaw = String(fd.get('fontSize') || '').trim();
   const fontSize = Number(fontSizeRaw);
 
+  // Semantic Scholar API Key（可选）：留空保留原值
+  const s2ApiKeyRaw = String(fd.get('s2ApiKey') || '').trim();
+
   // 温度范围校验（两组各自校验）
   const recTempErr = validateTemperature(recCfg);
   if (recTempErr) {
@@ -692,6 +710,7 @@ async function save() {
     recognition,
     reading,
     fontSize,
+    s2ApiKey: s2ApiKeyRaw ? s2ApiKeyRaw : current.s2ApiKey || '',
     promptSummarize,
     promptExplainConcepts,
     promptCritique,

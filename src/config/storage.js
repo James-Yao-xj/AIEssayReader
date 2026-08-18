@@ -180,6 +180,9 @@ function deepMergeSettings(defaults, user) {
     result.fontSize = Math.min(24, Math.max(12, Math.round(user.fontSize)));
   }
 
+  // 合并 Semantic Scholar API Key（可选）
+  if (typeof user.s2ApiKey === 'string') result.s2ApiKey = user.s2ApiKey;
+
   // 合并提示词
   if (typeof user.promptSummarize === 'string') result.promptSummarize = user.promptSummarize;
   if (typeof user.promptExplainConcepts === 'string') result.promptExplainConcepts = user.promptExplainConcepts;

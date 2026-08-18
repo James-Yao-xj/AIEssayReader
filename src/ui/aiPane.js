@@ -19,6 +19,7 @@ import { getState, setState, subscribe } from '../state/store.js';
 import * as client from '../ai/client.js';
 import { createStreamingRenderer, renderMarkdown } from './render.js';
 import { describeErr } from '../utils/errors.js';
+import { searchRelated, computeBadges } from '../related/relatedPapers.js';
 
 const TABS = [
   { id: 'summarize', label: '总结' },
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'critique', label: '质疑' },
   { id: 'translate', label: '翻译' },
   { id: 'chat', label: '对话' },
+  { id: 'related', label: '相关论文' },
 ];
 
 /** @type {HTMLElement | null} */
@@ -33,6 +35,15 @@ let root = null;
 
 /** @type {AbortController | null} */
 let currentController = null;
+
+/** 相关论文结果条目徽标元素映射：paperId → 徽标 <a>。 */
+const badgeEls = /** @type {Map<string, HTMLElement>} */ (new Map());
+
+/** 代码徽标后台任务的中止控制器（切换论文 / 重新检索时中止）。 */
+let badgeAbort = null;
+
+/** 上次已预填相关论文搜索框的论文名（用于检测 paper 切换）。 */
+let lastPrefillPaper = null;
 
 /** 各分析 tab 最近一次生成的原始 markdown 文本（用于保存）。 */
 const savedResults = /** @type {Record<string, string>} */ ({
@@ -506,6 +517,7 @@ export function initAiPane() {
       ${renderAnalyzeTab('critique', '批判质疑', '从方法/结果/论证三个层面对论文提出质疑并给改进建议。')}
       ${renderAnalyzeTab('translate', '翻译', '把论文全文忠实翻译成中文，保留公式/代码/结构与引用标记。')}
       ${renderChatTab()}
+      ${renderRelatedTab()}
     </div>
   `;
   paneAi.appendChild(root);
@@ -513,6 +525,7 @@ export function initAiPane() {
   bindTabs();
   bindAnalyzeButtons();
   bindChat();
+  bindRelated();
 
   // 订阅 store：tab 高亮 + busy 态同步 + 追问联动 + 保存按钮状态
   subscribe((s) => {
@@ -535,6 +548,9 @@ export function initAiPane() {
       }
     }
   });
+  // 相关论文搜索框：论文切换时预填标题 + 清空结果
+  subscribe((s) => syncRelatedPrefill(s.paper));
+
   syncTabs(getState().ui.activeTab);
   syncBusy(getState().ui.busy);
   syncChatSaveButton();
@@ -639,6 +655,9 @@ function syncBusy(busy) {
     /** @type {HTMLButtonElement} */ (btn).disabled = busy;
   });
   root.querySelectorAll('[data-action="send"]').forEach((btn) => {
+    /** @type {HTMLButtonElement} */ (btn).disabled = busy;
+  });
+  root.querySelectorAll('[data-action="related-search"]').forEach((btn) => {
     /** @type {HTMLButtonElement} */ (btn).disabled = busy;
   });
   root.querySelectorAll('[data-action="save"]').forEach((btn) => {
@@ -847,6 +866,236 @@ function scrollChatToBottom() {
   if (list instanceof HTMLElement) {
     list.scrollTop = list.scrollHeight;
   }
+}
+
+// =========================================================
+// 相关论文 tab
+// =========================================================
+
+function renderRelatedTab() {
+  return `
+    <section class="ai-pane__section ai-pane__section--related" data-section="related" hidden>
+      <div class="ai-section__head">
+        <div class="ai-section__title">相关论文</div>
+      </div>
+      <div class="ai-section__desc">基于当前论文（或手动输入）检索相似文献与引用网络。</div>
+      <div class="related-search">
+        <input class="related-search__input" data-related-input
+          placeholder="论文标题 / DOI / arXiv / URL…" autocomplete="off" spellcheck="false" />
+        <button type="button" class="ai-btn ai-btn--primary"
+          data-action="related-search">检索</button>
+      </div>
+      <div class="ai-error" data-error hidden></div>
+      <div class="related-status" data-related-status hidden></div>
+      <div class="related-results" data-related-results>
+        <div class="ai-placeholder">加载论文后自动填入标题，或手动输入后点「检索」。</div>
+      </div>
+    </section>
+  `;
+}
+
+function bindRelated() {
+  if (!root) return;
+  const searchBtn = root.querySelector('[data-action="related-search"]');
+  const input = root.querySelector('[data-related-input]');
+  searchBtn?.addEventListener('click', () => void runRelatedSearch());
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      void runRelatedSearch();
+    }
+  });
+}
+
+async function runRelatedSearch() {
+  if (!root) return;
+  if (getState().ui.busy) return;
+
+  const input = /** @type {HTMLInputElement | null} */ (
+    root.querySelector('[data-related-input]')
+  );
+  const searchBtn = /** @type {HTMLButtonElement | null} */ (
+    root.querySelector('[data-action="related-search"]')
+  );
+  const resultsEl = root.querySelector('[data-related-results]');
+  const errorEl = root.querySelector('.ai-pane__section--related [data-error]');
+  const statusEl = root.querySelector('[data-related-status]');
+  const query = input?.value?.trim();
+  if (!query) {
+    if (errorEl) showError(errorEl, '请输入论文标题 / DOI / arXiv / URL。');
+    return;
+  }
+
+  if (errorEl) hideError(errorEl);
+  badgeEls.clear();
+  abortBadgePass();
+  if (resultsEl) resultsEl.innerHTML = '<div class="ai-placeholder">检索中…</div>';
+  if (statusEl) {
+    statusEl.textContent = '检索中…';
+    statusEl.hidden = false;
+  }
+
+  currentController = new AbortController();
+  badgeAbort = new AbortController();
+  setState({ ui: { ...getState().ui, busy: true } });
+  if (searchBtn) searchBtn.textContent = '检索中…';
+
+  try {
+    const results = await searchRelated(query, { signal: currentController.signal });
+    if (resultsEl) renderRelatedResults(resultsEl, results);
+    // 后台跑代码徽标（不阻塞主结果）
+    void computeBadges(results, {
+      signal: badgeAbort.signal,
+      onBadge: applyBadge,
+    }).catch((err) => {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      console.warn('[related] 代码徽标校验中断：', err);
+    });
+  } catch (err) {
+    if (resultsEl) resultsEl.innerHTML = '';
+    if (errorEl) showError(errorEl, describeErr(err));
+  } finally {
+    setState({ ui: { ...getState().ui, busy: false } });
+    currentController = null;
+    if (statusEl) statusEl.hidden = true;
+    if (searchBtn) searchBtn.textContent = '检索';
+  }
+}
+
+function renderRelatedResults(container, results) {
+  if (!container) return;
+  container.innerHTML = '';
+  const groups = [
+    ['⭐ 相似推荐', results.recommendations],
+    ['🔗 参考文献（前人工作）', results.references],
+    ['📖 被引论文（后续工作）', results.citations],
+  ];
+  for (const [label, papers] of groups) {
+    const group = document.createElement('div');
+    group.className = 'related-group';
+
+    const head = document.createElement('div');
+    head.className = 'related-group__title';
+    head.textContent = label;
+    group.appendChild(head);
+
+    if (!papers || papers.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'related-empty';
+      empty.textContent = '（无结果）';
+      group.appendChild(empty);
+    } else {
+      for (const p of papers) {
+        group.appendChild(buildRelatedItem(p));
+      }
+    }
+    container.appendChild(group);
+  }
+}
+
+function buildRelatedItem(p) {
+  const item = document.createElement('div');
+  item.className = 'related-item';
+
+  const title = document.createElement('a');
+  title.className = 'related-item__title';
+  title.textContent = p.title || '(无标题)';
+  const href = safeHref(p.url);
+  if (href) {
+    title.href = href;
+    title.target = '_blank';
+    title.rel = 'noopener noreferrer';
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'related-item__meta';
+  const parts = [];
+  if (p.authors?.length) {
+    parts.push(
+      p.authors.slice(0, 3).join(', ') + (p.authors.length > 3 ? ' 等' : ''),
+    );
+  }
+  if (p.year) parts.push(String(p.year));
+  if (p.venue) parts.push(p.venue);
+  if (p.citationCount > 0) parts.push(`被引 ${p.citationCount}`);
+  meta.textContent = parts.length ? parts.join(' · ') : '—';
+
+  item.appendChild(title);
+  item.appendChild(meta);
+
+  if (p.abstract) {
+    const abs = document.createElement('div');
+    abs.className = 'related-item__abstract';
+    abs.textContent =
+      p.abstract.length > 200 ? p.abstract.slice(0, 200) + '…' : p.abstract;
+    item.appendChild(abs);
+  }
+
+  // 徽标占位：命中时由 applyBadge 填充
+  const badge = document.createElement('a');
+  badge.className = 'related-badge';
+  badge.hidden = true;
+  badge.target = '_blank';
+  badge.rel = 'noopener noreferrer';
+  item.appendChild(badge);
+  if (p.paperId) badgeEls.set(p.paperId, badge);
+
+  return item;
+}
+
+function applyBadge(paperId, repo) {
+  if (!paperId) return;
+  const el = badgeEls.get(paperId);
+  if (!el) return;
+  el.textContent = '有代码';
+  el.title = repo.repo + (repo.stars ? ` ⭐${repo.stars}` : '');
+  el.href = `https://github.com/${repo.repo}`;
+  el.hidden = false;
+}
+
+function abortBadgePass() {
+  if (badgeAbort) {
+    try {
+      badgeAbort.abort();
+    } catch {
+      /* ignore */
+    }
+    badgeAbort = null;
+  }
+}
+
+/**
+ * 论文切换时：预填搜索框标题 + 清空结果 + 中止后台徽标。
+ * @param {import('../state/store.js').State['paper']} paper
+ */
+function syncRelatedPrefill(paper) {
+  if (!root) return;
+  const name = paper?.name ?? null;
+  if (name === lastPrefillPaper) return;
+  lastPrefillPaper = name;
+
+  const input = /** @type {HTMLInputElement | null} */ (
+    root.querySelector('[data-related-input]')
+  );
+  if (input) input.value = paper?.meta?.title || '';
+
+  const resultsEl = root.querySelector('[data-related-results]');
+  if (resultsEl) {
+    resultsEl.innerHTML =
+      '<div class="ai-placeholder">加载论文后自动填入标题，或手动输入后点「检索」。</div>';
+  }
+  const errorEl = root.querySelector('.ai-pane__section--related [data-error]');
+  if (errorEl) hideError(errorEl);
+  badgeEls.clear();
+  abortBadgePass();
+}
+
+/**
+ * @param {string | null | undefined} url
+ * @returns {string | null} 仅放行 http/https 外链，否则返回 null
+ */
+function safeHref(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
 }
 
 // =========================================================
