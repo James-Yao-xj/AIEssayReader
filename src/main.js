@@ -26,7 +26,7 @@ import { getState, setState, subscribe } from './state/store.js';
 import { loadSettings } from './config/storage.js';
 import { initSettings, openSettings } from './ui/settings.js';
 import { initAiPane } from './ui/aiPane.js';
-import { initTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
+import { initTextPane, resetTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
 import { initPaneResize } from './ui/paneResize.js';
 import { initPaneCollapse } from './ui/paneCollapse.js';
 import { initArchiveButton } from './ui/archiveDialog.js';
@@ -70,6 +70,8 @@ const keyHint = /** @type {HTMLElement | null} */ (
  * @type {{ cleanup: () => void, setZoom: (z:number) => void, getZoom: () => number } | null}
  */
 let currentPdfHandle = null;
+// Each load owns its asynchronous results.
+let documentVersion = 0;
 /** @type {AbortController | null} */
 let activeVisionAbort = null;
 
@@ -87,6 +89,7 @@ let statusTimer = 0;
  * @param {number} [duration] 毫秒，0 表示不自动隐藏
  */
 function showStatus(kind, msg, duration = 3000) {
+  clearTimeout(statusTimer);
   statusBar.classList.remove(
     'status-bar--error',
     'status-bar--success',
@@ -104,6 +107,7 @@ function showStatus(kind, msg, duration = 3000) {
 }
 
 function hideStatus() {
+  clearTimeout(statusTimer);
   statusBar.hidden = true;
 }
 
@@ -127,6 +131,10 @@ async function loadPdf(file) {
     showStatus('error', `不支持的文件类型：${file.name || file.type}（仅支持 .pdf）`);
     return;
   }
+
+  const version = ++documentVersion;
+  resetTextPane();
+  setState({ paper: null, messages: [], conversationSummary: null, retrievedChunkIndices: [], chatStatus: null });
 
   // 清理上一个 PDF（含正在进行的 AI 视觉识别）
   if (currentPdfHandle) {
@@ -158,8 +166,9 @@ async function loadPdf(file) {
   /** @type {Promise<any>[]} */
   const tasks = [];
   tasks.push(
-    renderPdf(file, pdfScroll)
+    renderPdf(file, pdfScroll, () => version === documentVersion)
       .then((handle) => {
+        if (version !== documentVersion) { handle.cleanup(); return; }
         currentPdfHandle = handle;
         showStatus(
           'info',
@@ -168,6 +177,7 @@ async function loadPdf(file) {
         );
       })
       .catch((err) => {
+        if (version !== documentVersion) return;
         console.error('[pdf] render 失败：', err);
         showStatus('error', `PDF 渲染失败：${describeErr(err)}`);
       }),
@@ -175,6 +185,7 @@ async function loadPdf(file) {
   tasks.push(
     extractText(file)
       .then((result) => {
+        if (version !== documentVersion) return;
         renderTextToMiddle(result);
         // 写入 store.paper，供 AI 层（client.js → context.js）使用
         setState({
@@ -202,6 +213,7 @@ async function loadPdf(file) {
         );
       })
       .catch((err) => {
+        if (version !== documentVersion) return;
         console.error('[pdf] extract 失败：', err);
         showStatus('error', `文本提取失败：${describeErr(err)}`);
       }),
@@ -239,11 +251,13 @@ function setupVisionHandler(file) {
       const result = await extractWithVision(file, {
         signal: ctrl.signal,
         onProgress: (current, total) => {
+          if (ctrl.signal.aborted) return;
           setVisionProgress(current, total);
           showStatus('info', `AI 识别中 ${current}/${total} 页…`, 0);
         },
       });
 
+      if (ctrl.signal.aborted) return;
       // 更新中栏显示（切换到 AI 模式）
       renderVisionResult(result);
       // 更新 store.paper（AI 分析将使用新结果）
@@ -270,6 +284,7 @@ function setupVisionHandler(file) {
         5000,
       );
     } catch (err) {
+      if (activeVisionAbort !== ctrl) return;
       hideVisionProgress();
       if (err instanceof Error && err.name === 'AbortError') {
         showStatus('info', 'AI 识别已取消', 3000);
@@ -515,3 +530,22 @@ console.info(
   '[app] AI 论文阅读插件已就绪。' +
     '拖入 PDF 或按 Ctrl/Cmd+O 打开；右上角"设置"填 Base URL/API Key。',
 );
+
+// Archive records have no PDF pages. Release the previous document view.
+let displayedPaper = getState().paper;
+subscribe((s) => {
+  if (s.paper === displayedPaper) return;
+  displayedPaper = s.paper;
+  if (!s.paper || s.paper.pages.length || s.paper.fullText) return;
+  documentVersion++;
+  activeVisionAbort?.abort();
+  activeVisionAbort = null;
+  currentPdfHandle?.cleanup();
+  currentPdfHandle = null;
+  pdfScroll.replaceChildren();
+  textScroll.replaceChildren();
+  resetTextPane();
+  setPaneEmpty(panePdf, true);
+  setPaneEmpty(paneText, true);
+  hideStatus();
+});

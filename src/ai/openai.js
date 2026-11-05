@@ -38,16 +38,7 @@ export function createOpenAIProvider(config) {
     const stream = opts?.stream ?? true;
 
     // 诊断日志：输出当前调用的模型与端点（apiKey 脱敏）
-    const maskedKey =
-      apiKey.length > 8
-        ? apiKey.slice(0, 8) + '...'
-        : apiKey
-          ? '***'
-          : '(未设置)';
-    console.info(
-      `[AI] 请求模型：${model} → ${endpoint}` +
-        `（Key: ${maskedKey}，temperature: ${temperature}，stream: ${stream}）`,
-    );
+    console.info(`[AI] 请求模型：${model} → ${endpoint}（stream: ${stream}）`);
 
     /** @type {Response} */
     let res;
@@ -82,7 +73,9 @@ export function createOpenAIProvider(config) {
     // 非流式：直接解析 JSON 返回全文
     if (!stream) {
       const json = await res.json();
+      if (json.error) throw new Error(json.error.message || 'AI 服务返回错误。');
       const content = json?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string' || !content) throw new Error('AI 服务未返回文本内容。');
       if (typeof content === 'string' && content.length > 0) {
         yield content;
       }
@@ -110,8 +103,8 @@ export function createOpenAIProvider(config) {
           );
         }
         const { done, value } = chunk;
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        // Flush the last record even if the server omits its final newline.
+        buffer += done ? decoder.decode() + '\n' : decoder.decode(value, { stream: true });
 
         // 按行处理 SSE
         let nl;
@@ -135,13 +128,16 @@ export function createOpenAIProvider(config) {
             // 单行 JSON 解析失败不致命，跳过
             continue;
           }
+          if (json.error) throw new Error(json.error.message || 'AI 服务返回错误。');
           const delta = json?.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
             yield delta;
           }
         }
+        if (done) break;
       }
     } finally {
+      await reader.cancel().catch(() => {});
       try {
         reader.releaseLock();
       } catch {

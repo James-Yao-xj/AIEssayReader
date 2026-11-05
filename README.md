@@ -6,6 +6,10 @@
 
 ## 快速开始
 
+需要 Node.js 22.22.2+（22 LTS）、24.15.0+（24 LTS）或 26+。
+
+验证命令：`npm test`（回归测试）、`npm run build`（单 HTML 构建）、`npm audit`（依赖漏洞）。
+
 ```bash
 # 1. 安装依赖（仅首次）
 npm install
@@ -44,7 +48,7 @@ npm run preview
 
 ## 技术栈
 
-- **构建**：Vite 5 + `vite-plugin-singlefile` → 单 HTML
+- **构建**：Vite 7 + `vite-plugin-singlefile` → 单 HTML
 - **PDF**：pdf.js（`?worker&inline` 全内联）
 - **Markdown**：marked（含 KaTeX 数学扩展）
 - **公式**：KaTeX（仅 AI 输出栏，字体惰性内联）
@@ -56,6 +60,6 @@ npm run preview
 
 - **CORS**：部分自建 AI 服务（vLLM / Ollama）默认不允许浏览器跨域请求，需在服务端配 CORS 头或使用代理。
 - **`file://` 协议**：双击 `dist/index.html` 时，浏览器可能限制 `file://` 下的 fetch 请求。建议用 `npm run preview` 做本地静态服务。
-- **扫描件 PDF**：无文本层的纯扫描 PDF 无法提取文本，左栏仍可渲染原版，但 AI 功能不可用。
-- **超长论文**：论文全文一次性注入 AI 上下文，若模型上下文窗口不够大会截断。建议使用 32k+ token 上下文的模型。
+- **扫描件 PDF**：无文本层的纯扫描 PDF 需要在中栏使用 AI 视觉识别，并配置支持图片输入的识别模型。
+- **超长论文**：对话会检索相关段落并压缩历史；全文分析仍受字符预算和模型上下文窗口限制，可能截断。
 - **`standardFontDataUrl` 警告**：pdf.js 对极少数内嵌字体（CJK）渲染 canvas 时可能缺字形，属于 pdf.js 已知问题，拉丁论文不受影响。

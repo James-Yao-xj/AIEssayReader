@@ -79,6 +79,7 @@ const TASK_TEMPLATES = {
  * @returns {Array<{ role: 'system' | 'user', content: string }>}
  */
 export function assemble({ task, paper, messages = [], recentN = 8, templates, conversationSummary, retrievedChunkIndices }) {
+  _lastRetrievedIndices = [];
   // 自定义模板优先；仅空白视为"未提供"，回退到内置默认。
   const raw = templates?.[task];
   const taskTemplate =
@@ -114,14 +115,16 @@ export function assemble({ task, paper, messages = [], recentN = 8, templates, c
       // 计算非论文部分的开销（GLOBAL_STYLE + 引导语 + 分隔符 + taskTemplate + 摘要）
       const overhead = systemContent.length - paperText.length;
       const maxPaperChars = Math.max(0, MAX_TOTAL_CHARS - MIN_MESSAGE_BUDGET - overhead);
-      const truncatedPaper =
-        paperText.slice(0, maxPaperChars) +
-        '\n\n[论文过长，已截断尾部以保留对话空间。若需讨论后半部分，请在左侧目录跳转到对应章节后重新追问。]';
+      const notice = '\n\n[论文过长，已截断尾部以保留对话空间。]';
+      const truncatedPaper = paperText.slice(0, Math.max(0, maxPaperChars - notice.length)) + notice;
       systemContent = buildSystem({ paperText: truncatedPaper, taskTemplate });
       // 截断后重新注入摘要，确保摘要不丢失
       if (summaryBlock) {
         systemContent += summaryBlock;
       }
+    }
+    if (systemContent.length > MAX_TOTAL_CHARS - MIN_MESSAGE_BUDGET) {
+      throw new Error('提示词或对话摘要过长，请缩短后重试。');
     }
     const budget = Math.max(0, MAX_TOTAL_CHARS - systemContent.length);
     const recent = slideWindow(messages, recentN, budget);
@@ -197,6 +200,8 @@ function slideWindow(messages, recentN, budget) {
     if (!removed) break;
     total -= removed.content?.length || 0;
   }
+  if (total > budget) throw new Error('当前提问过长，请缩短后重试。');
+  while (picked.length > 1 && picked[0].role === 'assistant') picked.shift();
   return picked;
 }
 
@@ -282,7 +287,11 @@ function extractKeywords(text) {
  */
 function retrieveRelevantContent(paperText, question, maxChars, boostIndices, summaryCtx) {
   // 按段落边界切分
-  const chunks = paperText.split(/\n\s*\n/).filter((c) => c.trim().length > 30);
+  // Split large paragraphs so fixed head and tail sections fit the budget.
+  const chunks = paperText.split(/\n\s*\n/)
+    .filter((c) => c.trim())
+    .flatMap((c) => c.match(/[\s\S]{1,4000}/g));
+  const contentBudget = Math.max(0, maxChars - 500);
   if (chunks.length === 0) return paperText.slice(0, maxChars);
 
   // 从当前提问 + 对话摘要中联合提取关键词（摘要提供上下文锚点）
@@ -325,7 +334,7 @@ function retrieveRelevantContent(paperText, question, maxChars, boostIndices, su
 
     for (const { index } of scored) {
       const len = chunks[index].length;
-      if (totalChars + len > maxChars) break;
+      if (totalChars + len + selected.size * 2 > contentBudget) continue;
       selected.add(index);
       totalChars += len;
     }

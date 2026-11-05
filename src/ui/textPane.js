@@ -85,9 +85,21 @@ export function initTextPane() {
 
 // ---- 对外 API ----
 
+/** Clear text and OCR state before a new document load. */
+export function resetTextPane() {
+  cachedPdfJsResult = null;
+  cachedVisionResult = null;
+  visionHandler = null;
+  hideVisionProgress();
+  hideAskBtn();
+  if (toggleTrack) toggleTrack.classList.remove('text-mode-toggle--vision');
+  currentMode = 'pdfjs';
+}
+
+
 /**
  * 注册 AI 视觉识别的回调。main.js 调用。
- * @param {() => Promise<void>} fn
+ * @param {(() => Promise<void>) | null} fn
  */
 export function setVisionHandler(fn) {
   visionHandler = fn;
@@ -134,6 +146,9 @@ export function renderText(result) {
     scrollEl = document.getElementById('text-scroll');
     if (!scrollEl) return;
   }
+  cachedVisionResult = null;
+  hideVisionProgress();
+  if (toggleTrack) toggleTrack.classList.remove('text-mode-toggle--vision');
   cachedPdfJsResult = { meta: result.meta, pages: result.pages || [] };
   currentMode = 'pdfjs';
   renderCurrent();

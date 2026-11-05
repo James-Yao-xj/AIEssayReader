@@ -42,47 +42,44 @@ export async function extractText(file) {
   });
   const pdf = await loadingTask.promise;
 
-  // ---- 元信息 ----
-  /** @type {{ title?: string, authors?: string[], nPages: number }} */
-  const meta = { nPages: pdf.numPages };
   try {
-    const m = await pdf.getMetadata();
-    const info = m?.info || {};
-    if (typeof info.Title === 'string' && info.Title.trim()) {
-      meta.title = info.Title.trim();
+    // ---- 元信息 ----
+    /** @type {{ title?: string, authors?: string[], nPages: number }} */
+    const meta = { nPages: pdf.numPages };
+    try {
+      const m = await pdf.getMetadata();
+      const info = m?.info || {};
+      if (typeof info.Title === 'string' && info.Title.trim()) {
+        meta.title = info.Title.trim();
+      }
+      if (typeof info.Author === 'string' && info.Author.trim()) {
+        meta.authors = [info.Author.trim()];
+      }
+    } catch (err) {
+      // 元信息提取失败不阻塞主流程
+      console.warn('[pdf] 元信息提取失败：', err);
     }
-    if (typeof info.Author === 'string' && info.Author.trim()) {
-      meta.authors = [info.Author.trim()];
+
+    // ---- 逐页提取文本 ----
+    /** @type {Array<{ pageNum: number, text: string }>} */
+    const pages = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      const text = textContentToString(tc);
+      pages.push({ pageNum: i, text });
+      page.cleanup(); // 释放页内缓存
     }
-  } catch (err) {
-    // 元信息提取失败不阻塞主流程
-    console.warn('[pdf] 元信息提取失败：', err);
-  }
 
-  // ---- 逐页提取文本 ----
-  /** @type {Array<{ pageNum: number, text: string }>} */
-  const pages = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const tc = await page.getTextContent();
-    const text = textContentToString(tc);
-    pages.push({ pageNum: i, text });
-    page.cleanup(); // 释放页内缓存
-  }
+    const fullText = pages
+      .map((p) => p.text)
+      .filter(Boolean)
+      .join('\n\n');
 
-  const fullText = pages
-    .map((p) => p.text)
-    .filter(Boolean)
-    .join('\n\n');
-
-  // 清理：销毁文档对象释放 worker 端资源
-  try {
+    return { meta, fullText, pages };
+  } finally {
     await pdf.destroy();
-  } catch {
-    /* ignore */
   }
-
-  return { meta, fullText, pages };
 }
 
 /**

@@ -24,6 +24,7 @@
  * ========================================================= */
 
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import katex from 'katex';
 // 让 Vite 在构建期把 KaTeX 的 CSS（含 @font-face 引用的 woff2 字体）一并打进
 // 单 HTML。dev 模式下走 <style> 注入；build 模式下经 viteSingleFile 内联进 HTML。
@@ -206,7 +207,10 @@ function toHtml(md) {
   try {
     const out = marked.parse(normalizeLatexDelimiters(md));
     // marked v12 默认同步返回 string；保险起见处理异常类型
-    return typeof out === 'string' ? out : escapeHtml(md);
+    // AI output and imported archives can contain active HTML.
+    return typeof out === 'string'
+      ? DOMPurify.sanitize(out, { USE_PROFILES: { html: true } })
+      : escapeHtml(md);
   } catch (err) {
     console.warn('[render] marked 解析失败：', err);
     return escapeHtml(md);

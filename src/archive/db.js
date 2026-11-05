@@ -37,7 +37,11 @@ function openDB() {
 
     req.onsuccess = (event) => {
       const db = /** @type {IDBDatabase} */ (/** @type {any} */ (event.target).result);
-      db.onclose = () => { dbHandle = null; };
+      db.onclose = () => { if (dbHandle === db) dbHandle = null; };
+      db.onversionchange = () => {
+        db.close();
+        if (dbHandle === db) dbHandle = null;
+      };
       dbHandle = db;
       resolve(db);
     };
@@ -63,7 +67,9 @@ export async function saveArchive(record) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.add(record);
-    req.onsuccess = () => resolve(/** @type {number} */ (req.result));
+    // A request can succeed before its transaction fails.
+    tx.oncomplete = () => resolve(/** @type {number} */ (req.result));
+    tx.onabort = () => reject(new Error(`存档写入失败：${tx.error?.message || '事务已取消'}`));
     req.onerror = () => reject(new Error(`存档写入失败：${req.error?.message || '未知错误'}`));
   });
 }
@@ -121,7 +127,8 @@ export async function deleteArchive(id) {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const req = store.delete(id);
-    req.onsuccess = () => resolve();
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(new Error(`删除存档失败：${tx.error?.message || '事务已取消'}`));
     req.onerror = () => reject(new Error(`删除存档失败：${req.error?.message || '未知错误'}`));
   });
 }

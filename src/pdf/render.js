@@ -44,9 +44,10 @@ const VISIBLE_MARGIN_PX = 400;
  * 渲染 PDF 到容器（左栏）
  * @param {File} file
  * @param {HTMLElement} container 滚动容器（canvas 会被插入这里）
+ * @param {() => boolean} [isCurrent] Return false after a newer load starts.
  * @returns {Promise<{ totalPages: number, cleanup: () => void, setZoom: (z:number) => void, getZoom: () => number }>}
  */
-export async function renderPdf(file, container) {
+export async function renderPdf(file, container, isCurrent = () => true) {
   // 清空旧内容（main.js 在调用前应已调用上一个 cleanup，这里再保险一次）
   container.innerHTML = '';
 
@@ -54,6 +55,10 @@ export async function renderPdf(file, container) {
   const buf = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({ data: buf });
   const pdf = await loadingTask.promise;
+  if (!isCurrent()) {
+    await pdf.destroy();
+    throw new DOMException('Document changed', 'AbortError');
+  }
   const total = pdf.numPages;
 
   // ---- 为每页占位 ----
@@ -78,6 +83,7 @@ export async function renderPdf(file, container) {
 
   // ---- 单页渲染（幂等：zoom 不变则跳过）----
   const renderPageInto = async (/** @type {HTMLDivElement} */ holder) => {
+    if (destroyed) return;
     const num = Number(holder.dataset.pageNum);
     // 捕获本次渲染目标 zoom：await 期间 userZoom 可能再变
     const zoom = userZoom;
@@ -85,7 +91,7 @@ export async function renderPdf(file, container) {
     try {
       const page = await pdf.getPage(num);
       // getPage 期间 zoom 可能已变；若已变则放弃本次（让调用方按新 zoom 再来）
-      if (userZoom !== zoom) return;
+      if (destroyed || userZoom !== zoom) return;
       // 倍率模型（§3.1）：以「适应栏宽」为 1× 基准
       const baseVp = page.getViewport({ scale: 1 });
       const contentW = Math.max(1, container.clientWidth - 2 * PAD_PX);
@@ -113,6 +119,7 @@ export async function renderPdf(file, container) {
       if (userZoom === zoom) renderedZoom.set(num, zoom);
     } catch (err) {
       // 不吞异常：打印明细便于诊断；单页失败不阻塞其它页
+      if (destroyed) return;
       console.error('[pdf] 渲染页', num, '失败：', err);
     }
   };
@@ -195,7 +202,7 @@ export async function renderPdf(file, container) {
     if (tasks.length > 0) await Promise.all(tasks);
 
     // 锚点重算（重渲染后用真实 getBoundingClientRect 自动吸收上方可见页的高度变化）
-    if (anchoredHolder) {
+    if (!destroyed && anchoredHolder) {
       const canvas = anchoredHolder.querySelector('canvas');
       if (canvas) {
         const newH = canvas.getBoundingClientRect().height;
@@ -282,7 +289,7 @@ export async function renderPdf(file, container) {
     pendingAnchor = null;
     io.disconnect();
     try {
-      pdf.destroy();
+      void pdf.destroy().catch((err) => console.warn('[pdf] cleanup failed', err));
     } catch {
       /* ignore */
     }

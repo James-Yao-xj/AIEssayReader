@@ -12,6 +12,7 @@
 import { getState, setState } from '../state/store.js';
 import { getSavedResults, setSavedResults, refreshAfterRestore } from '../ui/aiPane.js';
 import * as db from './db.js';
+import { parseArchive } from './schema.js';
 
 /**
  * @typedef {{
@@ -129,23 +130,7 @@ export function importArchive(file) {
         const raw = /** @type {string} */ (reader.result);
         const data = JSON.parse(raw);
 
-        // 基本 schema 校验
-        if (!data || typeof data !== 'object') {
-          throw new Error('文件格式不正确：不是有效的 JSON 对象。');
-        }
-        if (!data.title && !data.paperMeta) {
-          throw new Error('文件格式不正确：缺少 title 或 paperMeta 字段。');
-        }
-
-        // 构建记录（兼容旧格式）
-        /** @type {Omit<ArchiveRecord, 'id'>} */
-        const record = {
-          title: data.title || data.paperMeta?.title || '导入的存档',
-          paperMeta: data.paperMeta || { name: '', nPages: 0 },
-          savedResults: data.savedResults || {},
-          messages: data.messages || [],
-          createdAt: data.createdAt || new Date().toISOString(),
-        };
+        const record = parseArchive(data);
 
         const id = await db.saveArchive(record);
         resolve({ ...record, id });

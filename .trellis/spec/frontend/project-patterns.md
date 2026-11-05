@@ -644,3 +644,12 @@ container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
 - ❌ 用 CSS transform 缩放 canvas（不撑布局 → 无滚动条、被裁切；位图不足时发虚）。
 - ❌ 缩放即清空/全量重渲染所有页（性能爆炸 + 锚点 offsetTop 失稳）。
 - ❌ 把 wheel 监听绑 `window`/`document`（影响其它栏）；或缩放逻辑泄漏到 main.js（违反单向依赖）。
+
+
+## Reliability audit contracts
+
+- Treat AI Markdown and imported archive strings as untrusted HTML. Sanitize after Markdown and math rendering.
+- Every document load and asynchronous AI task must check its document identity before state or DOM writes. Cancel obsolete work and clear cached results on replacement.
+- Commit IndexedDB writes only on transaction completion, not request success. Validate imported archive schemas before persistence.
+- Flush SSE decoder and trailing data at EOF; surface API error events and release the reader on exit.
+- Run `npm test`, `npm run build`, and `npm audit` for changes across these boundaries.

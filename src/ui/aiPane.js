@@ -35,6 +35,9 @@ let root = null;
 
 /** @type {AbortController | null} */
 let currentController = null;
+// Stop queued DOM writes when the document changes.
+let paneVersion = 0;
+let currentRenderer = null;
 
 /** 相关论文结果条目徽标元素映射：paperId → 徽标 <a>。 */
 const badgeEls = /** @type {Map<string, HTMLElement>} */ (new Map());
@@ -80,7 +83,9 @@ export function getSavedResults() {
 export function setSavedResults(rs) {
   const tasks = /** @type {const} */ (['summarize', 'explainConcepts', 'critique', 'translate']);
   for (const t of tasks) {
-    if (typeof rs[t] === 'string') savedResults[t] = rs[t];
+    savedResults[t] = typeof rs[t] === 'string' ? rs[t] : '';
+    const result = root?.querySelector(`[data-section="${t}"] [data-result]`);
+    if (result) renderMarkdown(result, savedResults[t]);
   }
   for (const t of tasks) syncSaveButton(t);
 }
@@ -527,6 +532,24 @@ export function initAiPane() {
   bindChat();
   bindRelated();
 
+  let previousPaper = getState().paper;
+  subscribe((s) => {
+    if (s.paper === previousPaper) return;
+    previousPaper = s.paper;
+    paneVersion++;
+    abortCurrent();
+    currentController = null;
+    currentRenderer?.finalize();
+    currentRenderer = null;
+    abortBadgePass();
+    const relatedStatus = root.querySelector('[data-related-status]');
+    if (relatedStatus) relatedStatus.hidden = true;
+    setSavedResults({});
+    renderChatList();
+    root.querySelectorAll('[data-error]').forEach(hideError);
+    setState({ ui: { ...getState().ui, busy: false, quickAsk: null } });
+  });
+
   // 订阅 store：tab 高亮 + busy 态同步 + 追问联动 + 保存按钮状态
   subscribe((s) => {
     syncTabs(s.ui.activeTab);
@@ -732,10 +755,11 @@ async function runAnalyze(task) {
   hideError(errorEl);
   resultEl.innerHTML = '<div class="ai-placeholder">生成中…</div>';
 
+  const version = paneVersion;
   currentController = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
 
-  const renderer = createStreamingRenderer(resultEl, { intervalMs: 80 });
+  const renderer = currentRenderer = createStreamingRenderer(resultEl, { intervalMs: 80 });
   try {
     const iterable =
       task === 'summarize'
@@ -748,15 +772,20 @@ async function runAnalyze(task) {
               ? client.translate(currentController.signal)
               : client.critique(currentController.signal); // 理论不可达兜底
     for await (const chunk of iterable) {
+      if (version !== paneVersion) return;
       renderer.push(chunk);
     }
+    if (version !== paneVersion) return;
     renderer.finalize();
     savedResults[task] = renderer.getText();
   } catch (err) {
+    if (version !== paneVersion) return;
     renderer.finalize();
     savedResults[task] = renderer.getText();
     showError(errorEl, describeErr(err));
   } finally {
+    if (version !== paneVersion) return;
+    currentRenderer = null;
     syncSaveButton(task);
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
@@ -803,19 +832,25 @@ async function sendChat() {
 
   const assistantEl = appendChatBubble('assistant', '');
 
+  const version = paneVersion;
   currentController = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
 
-  const renderer = createStreamingRenderer(assistantEl, { intervalMs: 80 });
+  const renderer = currentRenderer = createStreamingRenderer(assistantEl, { intervalMs: 80 });
   try {
     for await (const chunk of client.chat(text, currentController.signal)) {
+      if (version !== paneVersion) return;
       renderer.push(chunk);
     }
+    if (version !== paneVersion) return;
     renderer.finalize();
   } catch (err) {
+    if (version !== paneVersion) return;
     renderer.finalize();
     if (errorEl) showError(errorEl, describeErr(err));
   } finally {
+    if (version !== paneVersion) return;
+    currentRenderer = null;
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
     syncChatSaveButton();
@@ -935,6 +970,7 @@ async function runRelatedSearch() {
     statusEl.hidden = false;
   }
 
+  const version = paneVersion;
   currentController = new AbortController();
   badgeAbort = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
@@ -942,6 +978,7 @@ async function runRelatedSearch() {
 
   try {
     const results = await searchRelated(query, { signal: currentController.signal });
+    if (version !== paneVersion) return;
     if (resultsEl) renderRelatedResults(resultsEl, results);
     // 后台跑代码徽标（不阻塞主结果）
     void computeBadges(results, {
@@ -952,9 +989,12 @@ async function runRelatedSearch() {
       console.warn('[related] 代码徽标校验中断：', err);
     });
   } catch (err) {
+    if (version !== paneVersion) return;
     if (resultsEl) resultsEl.innerHTML = '';
     if (errorEl) showError(errorEl, describeErr(err));
   } finally {
+    if (version !== paneVersion) return;
+    currentRenderer = null;
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
     if (statusEl) statusEl.hidden = true;
@@ -1070,7 +1110,7 @@ function abortBadgePass() {
  */
 function syncRelatedPrefill(paper) {
   if (!root) return;
-  const name = paper?.name ?? null;
+  const name = paper;
   if (name === lastPrefillPaper) return;
   lastPrefillPaper = name;
 

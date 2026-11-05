@@ -8,7 +8,7 @@
  * - 订阅 store 同步按钮禁用态
  * ========================================================= */
 
-import { getState, subscribe } from '../state/store.js';
+import { getState } from '../state/store.js';
 import * as db from '../archive/db.js';
 import { hasContent, archiveCurrent, restoreArchive, exportArchive, importArchive } from '../archive/manager.js';
 
@@ -32,12 +32,8 @@ export function initArchiveButton() {
 
   btn.addEventListener('click', () => openArchiveDialog());
 
-  // 订阅 store：无内容时禁用
-  const update = () => {
-    /** @type {HTMLButtonElement} */ (btn).disabled = !hasContent();
-  };
-  subscribe(update);
-  update();
+  // Archive history and import remain available when the session is empty.
+  btn.disabled = false;
 }
 
 // ---- 对话框 ----
@@ -211,7 +207,7 @@ async function refreshList() {
     }
 
     listEl.innerHTML = archives.map((rec) => {
-      const time = formatTime(rec.createdAt);
+      const time = escapeHtml(formatTime(rec.createdAt));
       const indicators = buildIndicators(rec);
       return `
         <div class="archive-item">

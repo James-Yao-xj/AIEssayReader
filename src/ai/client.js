@@ -136,6 +136,7 @@ export function translate(signal) {
  * @returns {AsyncIterable<string>}
  */
 export async function* chat(userText, signal) {
+  signal?.throwIfAborted();
   const text = String(userText || '').trim();
   if (!text) {
     throw new Error('对话内容为空。');
@@ -149,8 +150,6 @@ export async function* chat(userText, signal) {
     ...messages,
     { role: /** @type {const} */ ('user'), content: text },
   ];
-  setState({ messages: messagesWithUser });
-
   const provider = makeProvider({ requirePaper: true });
   const assembled = assemble({
     task: 'chat',
@@ -160,6 +159,8 @@ export async function* chat(userText, signal) {
     conversationSummary: conversationSummary?.text || null,
     retrievedChunkIndices,
   });
+
+  setState({ messages: messagesWithUser });
 
   // 累积模式：保存本轮检索选中的段落索引，供下一轮加分使用
   const newRetrievedIndices = getLastRetrievedIndices();
@@ -172,6 +173,8 @@ export async function* chat(userText, signal) {
   let assistantText = '';
   try {
     for await (const chunk of provider.chat(assembled, { signal })) {
+      signal?.throwIfAborted();
+      if (getState().paper !== paper || getState().messages !== messagesWithUser) return;
       assistantText += chunk;
       yield chunk;
     }
@@ -179,6 +182,9 @@ export async function* chat(userText, signal) {
     // 流式中断/出错：不把残缺 assistant 文本入 store，让 UI 自行重试
     throw err;
   }
+
+  signal?.throwIfAborted();
+  if (getState().paper !== paper || getState().messages !== messagesWithUser) return;
 
   // 成功结束：把完整 assistant 回复入 store
   if (assistantText) {
@@ -191,7 +197,8 @@ export async function* chat(userText, signal) {
     });
 
     // 对话溢出时触发摘要压缩（阻塞等待，保证下次发送时摘要已就绪）
-    await maybeSummarize();
+    await maybeSummarize(signal);
+    if (getState().paper !== paper || signal?.aborted) return;
 
     // 更新状态栏指示
     updateChatStatus();
@@ -226,8 +233,8 @@ function formatMessagesForSummary(msgs) {
  *
  * @returns {Promise<void>}
  */
-async function maybeSummarize() {
-  const { messages, conversationSummary } = getState();
+async function maybeSummarize(signal) {
+  const { paper, messages, conversationSummary } = getState();
 
   if (messages.length <= SUMMARIZE_THRESHOLD) return;
 
@@ -254,11 +261,11 @@ async function maybeSummarize() {
         { role: 'system', content: SUMMARIZE_CONVERSATION },
         { role: 'user', content: summaryPrompt },
       ],
-      { stream: false },
+      { stream: false, signal },
     );
 
     const trimmed = (newSummary || '').trim();
-    if (trimmed) {
+    if (trimmed && !signal?.aborted && getState().paper === paper && getState().messages === messages) {
       setState({
         conversationSummary: {
           text: trimmed,

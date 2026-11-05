@@ -159,6 +159,10 @@ export async function extractWithVision(file, opts) {
 
   try { await pdf.destroy(); } catch { /* ignore */ }
 
+  if (!pages.some((page) => page.text.trim())) {
+    throw new Error('AI 未识别出任何文本，请检查识别模型设置后重试。');
+  }
+
   const fullText = pages
     .map((p) => (p.text ? p.text : `[第 ${p.pageNum} 页识别失败]`))
     .filter(Boolean)
