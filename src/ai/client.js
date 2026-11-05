@@ -10,7 +10,7 @@
  *   chat 同样流式，且：
  *     ① 流式开始前把 userText 入 store.messages
  *     ② 流式结束后把 assistant 全文入 store.messages
- * - 未配置 reading.apiKey 或未加载论文 → 抛带语义的 Error（由 UI 捕获提示）
+ * - Validate the model endpoint and paper before each request.
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
@@ -47,11 +47,6 @@ function makeProvider(opts) {
   const { settings, paper } = getState();
   const { reading } = settings;
 
-  if (!reading?.apiKey || !reading.apiKey.trim()) {
-    throw new Error(
-      '未配置文本阅读模型的 API Key。请点击右上角"设置"按钮，在"文本阅读模型"区域填写 Base URL 与 API Key 后重试。',
-    );
-  }
   if (!reading?.baseUrl || !reading.baseUrl.trim()) {
     throw new Error('未配置文本阅读模型的 Base URL，请在设置面板的"文本阅读模型"区域填写。');
   }
@@ -171,6 +166,7 @@ export async function* chat(userText, signal) {
   }
 
   let assistantText = '';
+  let completed = false;
   try {
     for await (const chunk of provider.chat(assembled, { signal })) {
       signal?.throwIfAborted();
@@ -178,12 +174,15 @@ export async function* chat(userText, signal) {
       assistantText += chunk;
       yield chunk;
     }
-  } catch (err) {
-    // 流式中断/出错：不把残缺 assistant 文本入 store，让 UI 自行重试
-    throw err;
+    signal?.throwIfAborted();
+    completed = true;
+  } finally {
+    // Remove failed turns so a retry does not duplicate the question.
+    if (!completed && getState().paper === paper && getState().messages === messagesWithUser) {
+      setState({ messages, retrievedChunkIndices });
+    }
   }
 
-  signal?.throwIfAborted();
   if (getState().paper !== paper || getState().messages !== messagesWithUser) return;
 
   // 成功结束：把完整 assistant 回复入 store

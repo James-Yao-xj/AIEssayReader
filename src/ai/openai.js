@@ -15,15 +15,22 @@
  * @returns {import('./provider.js').Provider}
  */
 export function createOpenAIProvider(config) {
-  const baseUrl = String(config?.baseUrl || '').replace(/\/+$/, '');
-  const apiKey = String(config?.apiKey || '');
-  const model = String(config?.model || '');
+  const baseUrl = String(config?.baseUrl || '').trim().replace(/\/+$/, '');
+  const apiKey = String(config?.apiKey || '').trim();
+  const model = String(config?.model || '').trim();
   const temperature =
-    typeof config?.temperature === 'number' ? config.temperature : 0.3;
+    Number.isFinite(config?.temperature) ? Math.min(2, Math.max(0, config.temperature)) : 0.3;
 
   if (!baseUrl) {
     throw new Error('OpenAI provider：缺少 baseUrl。');
   }
+
+  let url;
+  try { url = new URL(baseUrl); } catch { throw new Error('Base URL 必须是完整的 HTTP(S) 地址。'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error('Base URL 必须是 HTTP(S) 地址，且不能包含账号、查询参数或片段。');
+  }
+  if (!model) throw new Error('请配置模型名称。');
 
   const endpoint = `${baseUrl}/chat/completions`;
 
@@ -47,7 +54,7 @@ export function createOpenAIProvider(config) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         },
         body: JSON.stringify({
           model,
@@ -73,9 +80,9 @@ export function createOpenAIProvider(config) {
     // 非流式：直接解析 JSON 返回全文
     if (!stream) {
       const json = await res.json();
-      if (json.error) throw new Error(json.error.message || 'AI 服务返回错误。');
+      if (json?.error) throw new Error(json.error.message || 'AI 服务返回错误。');
       const content = json?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content) throw new Error('AI 服务未返回文本内容。');
+      if (typeof content !== 'string' || !content.trim()) throw new Error('AI 服务未返回文本内容。');
       if (typeof content === 'string' && content.length > 0) {
         yield content;
       }
@@ -89,6 +96,8 @@ export function createOpenAIProvider(config) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    let hasText = false;
+    let finished = false;
 
     try {
       while (true) {
@@ -120,22 +129,31 @@ export function createOpenAIProvider(config) {
           }
           const data = line.slice(5).trimStart();
           if (!data) continue;
-          if (data === '[DONE]') return;
+          if (data === '[DONE]') {
+            if (!hasText) throw new Error('AI 服务未返回文本内容。');
+            return;
+          }
           let json;
           try {
             json = JSON.parse(data);
           } catch {
-            // 单行 JSON 解析失败不致命，跳过
-            continue;
+            throw new Error('AI 服务返回了无效的流式数据。');
           }
-          if (json.error) throw new Error(json.error.message || 'AI 服务返回错误。');
+          if (json?.error) throw new Error(json.error.message || 'AI 服务返回错误。');
+          const reason = json?.choices?.[0]?.finish_reason;
+          if (reason === 'length') throw new Error('AI 输出达到长度上限，回复不完整。');
+          if (reason === 'content_filter') throw new Error('AI 服务过滤了回复内容。');
+          if (reason) finished = true;
           const delta = json?.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
+            if (delta.trim()) hasText = true;
             yield delta;
           }
         }
         if (done) break;
       }
+      if (!hasText) throw new Error('AI 服务未返回文本内容。');
+      if (!finished) throw new Error('AI 流式响应提前结束，回复不完整，请重试。');
     } finally {
       await reader.cancel().catch(() => {});
       try {

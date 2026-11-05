@@ -513,7 +513,7 @@ export function initAiPane() {
       ${TABS.map(
         (t) => `
         <button type="button" class="ai-tab" role="tab"
-          data-tab="${t.id}" aria-selected="false">${t.label}</button>`,
+          id="tab-${t.id}" aria-controls="panel-${t.id}" data-tab="${t.id}" aria-selected="false">${t.label}</button>`,
       ).join('')}
     </div>
     <div class="ai-body">
@@ -544,6 +544,8 @@ export function initAiPane() {
     abortBadgePass();
     const relatedStatus = root.querySelector('[data-related-status]');
     if (relatedStatus) relatedStatus.hidden = true;
+    const searchButton = root.querySelector('[data-action="related-search"]');
+    if (searchButton) searchButton.textContent = '检索';
     setSavedResults({});
     renderChatList();
     root.querySelectorAll('[data-error]').forEach(hideError);
@@ -636,6 +638,20 @@ function renderChatTab() {
 function bindTabs() {
   if (!root) return;
   root.querySelectorAll('.ai-tab').forEach((btn) => {
+    btn.addEventListener('keydown', (event) => {
+      const tabs = [...root.querySelectorAll('.ai-tab')];
+      const index = tabs.indexOf(btn);
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      if (getState().ui.busy) return;
+      tabs[next].click();
+      tabs[next].focus();
+    });
     btn.addEventListener('click', () => {
       const el = /** @type {HTMLElement} */ (btn);
       const id = el.dataset.tab;
@@ -657,10 +673,14 @@ function syncTabs(activeTab) {
     const el = /** @type {HTMLElement} */ (btn);
     const active = el.dataset.tab === activeTab;
     el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
     el.classList.toggle('ai-tab--active', active);
   });
   root.querySelectorAll('.ai-pane__section').forEach((sec) => {
     const el = /** @type {HTMLElement} */ (sec);
+    el.id = `panel-${el.dataset.section}`;
+    el.setAttribute('role', 'tabpanel');
+    el.setAttribute('aria-labelledby', `tab-${el.dataset.section}`);
     el.hidden = el.dataset.section !== activeTab;
   });
 }
@@ -847,6 +867,10 @@ async function sendChat() {
   } catch (err) {
     if (version !== paneVersion) return;
     renderer.finalize();
+    if (!renderer.getText()) {
+      if (!input.value) input.value = text;
+      renderChatList();
+    }
     if (errorEl) showError(errorEl, describeErr(err));
   } finally {
     if (version !== paneVersion) return;

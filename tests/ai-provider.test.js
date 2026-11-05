@@ -6,7 +6,7 @@ import { assemble, LIMITS } from '../src/ai/context.js';
 const provider = () => createOpenAIProvider({ baseUrl: 'https://example.test/v1', model: 'test', apiKey: 'secret' });
 
 test('SSE preserves split UTF-8 and the final record without newline', async () => {
-  const bytes = new TextEncoder().encode('data: {"choices":[{"delta":{"content":"你好"}}]}');
+  const bytes = new TextEncoder().encode('data: {"choices":[{"delta":{"content":"你好"},"finish_reason":"stop"}]}');
   globalThis.fetch = async () => new Response(new ReadableStream({ start(c) {
     for (const byte of bytes) c.enqueue(new Uint8Array([byte]));
     c.close();
@@ -35,4 +35,45 @@ test('a large unbroken paper stays inside the chat budget', () => {
     { role: 'user', content: 'Explain the paper' },
   ] });
   assert.ok(messages.reduce((sum, m) => sum + m.content.length, 0) <= LIMITS.MAX_TOTAL_CHARS);
+});
+
+test('keyless private-network endpoints omit Authorization and clamp temperature', async () => {
+  let received;
+  globalThis.fetch = async (url, options) => {
+    received = { url, ...options };
+    return Response.json({ choices: [{ message: { content: 'ok' } }] });
+  };
+  const local = createOpenAIProvider({ baseUrl: ' http://192.168.1.5:11434/v1/ ', apiKey: ' ', model: ' local ', temperature: 9 });
+  assert.equal(await local.chatOnce([], { stream: false }), 'ok');
+  assert.equal(received.url, 'http://192.168.1.5:11434/v1/chat/completions');
+  assert.equal(received.headers.Authorization, undefined);
+  assert.equal(JSON.parse(received.body).temperature, 2);
+});
+
+test('invalid endpoint schemes and ambiguous credentials fail before fetch', () => {
+  for (const baseUrl of ['file:///tmp/model', 'ftp://example.test', 'example.test/v1', 'https://user:pass@example.test', 'https://example.test/v1?key=secret']) {
+    assert.throws(() => createOpenAIProvider({ baseUrl, model: 'test' }), /Base URL/);
+  }
+});
+
+test('empty, malformed and interrupted streams cannot become successful replies', async () => {
+  for (const [data, error] of [
+    ['data: [DONE]\n', /未返回文本/],
+    ['data: {bad json}\n', /无效的流式数据/],
+    ['data: {"choices":[{"delta":{"content":"partial"}}]}\n', /提前结束/],
+    ['data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n', /长度上限/],
+  ]) {
+    globalThis.fetch = async () => new Response(data);
+    await assert.rejects(provider().chatOnce([]), error);
+  }
+});
+
+test('DONE ends a text stream and cancels its reader', async () => {
+  let cancelled = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    start(c) { c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}]}\ndata: [DONE]\n')); },
+    cancel() { cancelled = true; },
+  }));
+  assert.equal(await provider().chatOnce([]), 'ok');
+  assert.equal(cancelled, true);
 });

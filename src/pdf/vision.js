@@ -8,7 +8,7 @@
  * 从 settings.recognition 读取文本识别模型配置。
  * ========================================================= */
 
-import { pdfjsLib } from './extract.js';
+import { pdfjsLib, pdfWorker } from './extract.js';
 import { createProvider, buildVisionMessage } from '../ai/openai.js';
 import { getState } from '../state/store.js';
 
@@ -79,9 +79,6 @@ export async function extractWithVision(file, opts) {
   // 校验 settings —— 从 recognition 配置组取值
   const { settings } = getState();
   const { recognition } = settings;
-  if (!recognition?.apiKey?.trim()) {
-    throw new Error('请先在设置中配置文本识别模型的 API Key');
-  }
   if (!recognition?.baseUrl?.trim()) {
     throw new Error('请先在设置中配置文本识别模型的 Base URL');
   }
@@ -104,7 +101,7 @@ export async function extractWithVision(file, opts) {
 
   // ---- Phase 1: 获取 PDF 文档 ----
   const buf = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: buf });
+  const loadingTask = pdfjsLib.getDocument({ data: buf, worker: pdfWorker });
   const pdf = await loadingTask.promise;
 
   const meta = { nPages: pdf.numPages };

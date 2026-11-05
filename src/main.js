@@ -409,6 +409,8 @@ function openFilePicker() {
   input.click();
 }
 
+document.getElementById('btn-open-pdf')?.addEventListener('click', openFilePicker);
+
 // 让左栏 PDF 空态区域点击也能选文件（轻量引导）
 panePdf.addEventListener('click', (e) => {
   // 标题栏（含最小化按钮）交互不触发选文件；最小化态交给恢复逻辑
@@ -500,7 +502,7 @@ function syncKeyHint(settings) {
   const hasKey = hasRecKey || hasReadKey;
   keyHint.hidden = hasKey;
   if (!hasKey) {
-    keyHint.textContent = '未配置 API Key';
+    keyHint.textContent = 'API Key 未设置（免密服务可使用）';
     keyHint.style.cursor = 'pointer';
     keyHint.title = '点击打开设置';
     // 点徽标也能打开设置（更醒目的引导）

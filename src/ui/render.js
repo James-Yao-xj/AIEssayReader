@@ -37,11 +37,11 @@ const inlineMathExt = {
   name: 'inlineMath',
   level: 'inline',
   start(src) {
-    const i = src.search(/\$[^\s$]/);
+    const i = src.search(/\$[^\s$]|\\\(/);
     return i < 0 ? undefined : i;
   },
   tokenizer(src) {
-    const match = /^\$([^\n$]+?)\$/.exec(src);
+    const match = /^\$([^\n$]+?)\$/.exec(src) || /^\\\(([^\n]+?)\\\)/.exec(src);
     if (match && match[1].trim()) {
       return {
         type: 'inlineMath',
@@ -69,11 +69,11 @@ const blockMathExt = {
   name: 'blockMath',
   level: 'block',
   start(src) {
-    const i = src.indexOf('$$');
+    const i = src.search(/\$\$|\\\[/);
     return i < 0 ? undefined : i;
   },
   tokenizer(src) {
-    const match = /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(src);
+    const match = /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(src) || /^\\\[([\s\S]+?)\\\](?:\n|$)/.exec(src);
     if (match) {
       return {
         type: 'blockMath',
@@ -133,9 +133,10 @@ export function createStreamingRenderer(element, opts) {
   function flush() {
     timer = null;
     if (finalized) return;
+    const scroller = followingScroller(element);
     element.classList.add('md-body');
     element.innerHTML = toHtml(buffer);
-    autoScroll(element);
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 
   return {
@@ -155,9 +156,10 @@ export function createStreamingRenderer(element, opts) {
         clearTimeout(timer);
         timer = null;
       }
+      const scroller = followingScroller(element);
       element.classList.add('md-body');
       element.innerHTML = toHtml(buffer);
-      autoScroll(element);
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
     },
     /** 返回当前已累积的原始 markdown 文本（用于保存/导出）。 */
     getText() {
@@ -169,43 +171,13 @@ export function createStreamingRenderer(element, opts) {
 // ---------- 内部工具 ----------
 
 /**
- * 把 LaTeX 的 \(...\) / \[...\] 定界符归一化为已支持的 $...$ / $$...$$。
- *
- * 原因：本模块的 marked 扩展只识别 $（行内）与 $$（块级）。
- * 但很多模型（Claude / DeepSeek / Qwen / GLM 等 OpenAI 兼容模型）即便提示词
- * 要求用 $，仍经常输出 \(x^2\) 或 \[E=mc^2\]。这些会原样当文本显示。
- *
- * 在字符串层（marked.parse 之前）做替换，复用已验证的 $ 渲染路径：
- * - 块级 \[...\]：两侧强制换行成独占一行的 $$...$$（满足块级扩展的行首要求，
- *   避免模型把 $$ 写在段落中间导致匹配失败）。
- * - 行内 \(...\)：直接换成 $...$。
- *
- * 不在 marked 内用自定义扩展去识别 \(\)：marked 会先把 \( 当转义字符吃掉，
- * 在 tokenizer 里拿不到原始 \(，字符串层替换更可靠。
- *
- * @param {string} md
- * @returns {string}
- */
-function normalizeLatexDelimiters(md) {
-  if (!md) return md;
-  return md
-    // 块级 \[...\]：归一化为独占行的 $$...$$
-    .replace(/\\\[(.+?)\\\]/gs, (m, body) => {
-      const inner = /** @type {string} */ (body).trim();
-      return `\n\n$$${inner}$$\n\n`;
-    })
-    // 行内 \(...\)：归一化为 $...$（非贪婪，不跨行）
-    .replace(/\\\((.+?)\\\)/g, (_, body) => `$${body}$`);
-}
-
-/**
  * markdown → html（marked）。失败时退化为转义文本，绝不抛错。
  * @param {string} md
  * @returns {string}
  */
 function toHtml(md) {
   try {
-    const out = marked.parse(normalizeLatexDelimiters(md));
+    const out = marked.parse(md);
     // marked v12 默认同步返回 string；保险起见处理异常类型
     // AI output and imported archives can contain active HTML.
     return typeof out === 'string'
@@ -217,21 +189,13 @@ function toHtml(md) {
   }
 }
 
-/**
- * 让元素所在滚动容器滚到底（流式输出体验）。
- * 仅当用户已接近底部（120px 内）时自动滚，避免抢用户滚动。
- * @param {HTMLElement} el
- */
-function autoScroll(el) {
-  try {
-    const scroller = findScrollParent(el);
-    if (!scroller) return;
-    const distance =
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    if (distance < 120) scroller.scrollTop = scroller.scrollHeight;
-  } catch {
-    /* ignore */
-  }
+/** Return the scroll container only if the reader follows the latest output. */
+function followingScroller(el) {
+  const scroller = findScrollParent(el);
+  if (!scroller) return null;
+  // Measure before replacing HTML. A large update can move the bottom far away.
+  const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+  return distance < 120 ? scroller : null;
 }
 
 /**
@@ -242,7 +206,7 @@ function autoScroll(el) {
 function findScrollParent(el) {
   let p = el.parentElement;
   while (p) {
-    const style = getComputedStyle(p);
+    const style = window.getComputedStyle(p);
     if (/(auto|scroll)/.test(style.overflowY)) return p;
     p = p.parentElement;
   }

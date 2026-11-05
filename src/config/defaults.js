@@ -18,7 +18,7 @@ import {
  * 单个 AI 模型配置组（recognition 或 reading 共用同一结构）。
  * @typedef {Object} ModelConfig
  * @property {string} baseUrl    OpenAI 兼容接口的根地址（末尾不要带 /）。
- * @property {string} apiKey     用户 API Key（本地存储，UI 不回显明文）。
+ * @property {string} apiKey     用户 API Key（服务无需认证时可留空；本地存储）。
  * @property {string} model      模型名。
  * @property {number} temperature 取样温度，0~2。
  */

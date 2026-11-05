@@ -14,6 +14,13 @@ test('document changes clear analysis and archive restore replaces missing tabs'
     const pane = await server.ssrLoadModule('/src/ui/aiPane.js');
     const store = await server.ssrLoadModule('/src/state/store.js');
     pane.initAiPane();
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    assert.equal(tabs.filter(tab => tab.tabIndex === 0).length, 1);
+    tabs[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    assert.equal(document.activeElement, tabs[1]);
+    assert.equal(tabs[1].getAttribute('aria-selected'), 'true');
+    assert.ok(document.getElementById(tabs[1].getAttribute('aria-controls')));
+
     pane.setSavedResults({ summarize: 'old summary', critique: 'old critique' });
     store.setState({ paper: { name: 'next.pdf', fullText: 'new paper', pages: [], meta: {} } });
     assert.ok(Object.values(pane.getSavedResults()).every((value) => value === ''));

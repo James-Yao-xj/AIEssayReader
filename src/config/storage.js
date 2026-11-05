@@ -160,7 +160,7 @@ function deepMergeSettings(defaults, user) {
     if (typeof src.apiKey === 'string') result.recognition.apiKey = src.apiKey;
     if (typeof src.model === 'string') result.recognition.model = src.model;
     if (typeof src.temperature === 'number' && Number.isFinite(src.temperature)) {
-      result.recognition.temperature = src.temperature;
+      result.recognition.temperature = Math.min(2, Math.max(0, src.temperature));
     }
   }
 
@@ -171,7 +171,7 @@ function deepMergeSettings(defaults, user) {
     if (typeof src.apiKey === 'string') result.reading.apiKey = src.apiKey;
     if (typeof src.model === 'string') result.reading.model = src.model;
     if (typeof src.temperature === 'number' && Number.isFinite(src.temperature)) {
-      result.reading.temperature = src.temperature;
+      result.reading.temperature = Math.min(2, Math.max(0, src.temperature));
     }
   }
 
@@ -217,8 +217,8 @@ function migrateFromFlat(old) {
     result.reading.model = old.model;
   }
   if (typeof old.temperature === 'number' && Number.isFinite(old.temperature)) {
-    result.recognition.temperature = old.temperature;
-    result.reading.temperature = old.temperature;
+    result.recognition.temperature = Math.min(2, Math.max(0, old.temperature));
+    result.reading.temperature = Math.min(2, Math.max(0, old.temperature));
   }
 
   // 提示词也一起搬

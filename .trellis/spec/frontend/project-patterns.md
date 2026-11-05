@@ -18,7 +18,8 @@
 // src/pdf/extract.js
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline';
-pdfjsLib.GlobalWorkerOptions.workerPort = new PdfjsWorker();
+export const pdfWorker = new pdfjsLib.PDFWorker({ port: new PdfjsWorker() });
+// Pass { data, worker: pdfWorker } to every getDocument call.
 export { pdfjsLib };
 ```
 
@@ -653,3 +654,12 @@ container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
 - Commit IndexedDB writes only on transaction completion, not request success. Validate imported archive schemas before persistence.
 - Flush SSE decoder and trailing data at EOF; surface API error events and release the reader on exit.
 - Run `npm test`, `npm run build`, and `npm audit` for changes across these boundaries.
+
+
+## Reader optimization contracts
+
+- Explicitly share a PDFWorker between document tasks. A document transport must not own the shared worker.
+- Limit raster concurrency to two jobs and each canvas to four million pixels. Evict old offscreen rasters beyond eight cached pages.
+- Parse math at Markdown token boundaries, never by rewriting code spans or fences. Measure scroll-follow state before replacing content.
+- Modal dialogs keep keyboard focus and restore the trigger. Tabs use roving focus and Arrow/Home/End navigation.
+- API keys are optional for HTTP(S) endpoints. Omit empty Authorization headers. Streams must signal completion and reject malformed or empty data.

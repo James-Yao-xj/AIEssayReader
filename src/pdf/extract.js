@@ -19,8 +19,9 @@ import * as pdfjsLib from 'pdfjs-dist';
 // 不依赖外部文件，可被 vite-plugin-singlefile 正确内联进单 HTML。
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline';
 
-// 配置一次，全局生效
-pdfjsLib.GlobalWorkerOptions.workerPort = new PdfjsWorker();
+// The application owns this worker. Pass it explicitly so document cleanup
+// destroys only its transport and does not destroy the shared worker wrapper.
+export const pdfWorker = new pdfjsLib.PDFWorker({ port: new PdfjsWorker() });
 
 // 同时导出已配置好的 pdfjsLib 供 render.js 复用，避免重复初始化 worker
 export { pdfjsLib };
@@ -39,6 +40,7 @@ export async function extractText(file) {
   const buf = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({
     data: buf,
+    worker: pdfWorker,
   });
   const pdf = await loadingTask.promise;
 

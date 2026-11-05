@@ -2601,3 +2601,32 @@ body {
     transform: none;
   }
 }
+
+/* Keep keyboard navigation visible in both themes. */
+:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10000;
+  padding: 8px 12px;
+  background: Canvas;
+  color: CanvasText;
+  transform: translateY(-200%);
+}
+.skip-link:focus { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+.settings-field input[type="checkbox"] {
+  width: auto;
+  margin-inline-end: 8px;
+  vertical-align: middle;
+}

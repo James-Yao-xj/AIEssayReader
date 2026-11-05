@@ -38,7 +38,7 @@ test('a pending summary cannot restore context after archive or paper replacemen
   const started = new Promise(resolve => { summaryStarted = resolve; });
   globalThis.fetch = async (_url, request) => {
     if (JSON.parse(request.body).stream) {
-      return new Response('data: {"choices":[{"delta":{"content":"Answer"}}]}\n');
+      return new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n');
     }
     summaryStarted();
     return new Promise(resolve => { releaseSummary = resolve; });
@@ -52,4 +52,31 @@ test('a pending summary cannot restore context after archive or paper replacemen
   await completion;
   assert.equal(getState().conversationSummary, null);
   assert.equal(getState().chatStatus, null);
+});
+
+test('failed chat restores history so retry sends the question only once', async () => {
+  reset();
+  const original = [{ role: 'user', content: 'previous' }, { role: 'assistant', content: 'answer' }];
+  setState({ messages: original, settings: { reading: { apiKey: '', model: 'local', baseUrl: 'http://192.168.1.2/v1' } } });
+  globalThis.fetch = async () => new Response('data: {"error":{"message":"temporary"}}\n');
+  await assert.rejects(chat('retry question').next(), /temporary/);
+  assert.equal(getState().messages, original);
+
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.headers.Authorization, undefined);
+    const sent = JSON.parse(options.body).messages;
+    assert.equal(sent.filter(m => m.content === 'retry question').length, 1);
+    return new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\ndata: [DONE]\n');
+  };
+  for await (const _chunk of chat('retry question')) { /* Read the complete reply. */ }
+  assert.equal(getState().messages.length, 4);
+});
+
+test('consumer cancellation removes a partial user turn from stored history', async () => {
+  reset();
+  globalThis.fetch = async () => new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\ndata: [DONE]\n');
+  const iterator = chat('question');
+  await iterator.next();
+  await iterator.return();
+  assert.deepEqual(getState().messages, []);
 });
