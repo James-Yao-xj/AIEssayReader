@@ -1,0 +1,2 @@
+# Reliable reading workflows
+Implement all accepted review recommendations: resumable archives and autosave; explicit incomplete results; long-turn compression; page citations; PDF reading order; bounded-cost long-output rendering; opt-in segmented analysis/translation with resumable progress; retry failed OCR pages; browser regression tests; cancellable extraction and accessible exports; split UI responsibilities. Preserve no output token caps. User delegates every review and approval.
