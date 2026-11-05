@@ -81,6 +81,7 @@ async function* runOneShot(task, signal) {
   const { paper } = getState();
   const provider = makeProvider({ requirePaper: true });
   const plan = planRequest({ task, paper, messages: [], templates: getPromptTemplates() });
+  setState({ contextEvidence: plan.evidence });
   updateChatStatus(plan.stats, task);
   yield* provider.chat(plan.messages, { signal });
 }
@@ -154,41 +155,56 @@ export async function* chat(userText, signal) {
     templates: getPromptTemplates(),
     conversationSummary: conversationSummary?.text || null,
     summarizedUpTo: conversationSummary?.summarizedUpTo || 0,
+    pendingSummary: conversationSummary?.pending,
     retrievedChunkIndices,
   });
 
   setState({ messages: messagesWithUser });
 
-  setState({ retrievedChunkIndices: plan.retrievedIndices });
+  setState({ retrievedChunkIndices: plan.retrievedIndices, contextEvidence: plan.evidence });
   updateChatStatus(plan.stats, 'chat');
 
   let assistantText = '';
+  const messageId = crypto.randomUUID();
+  let ownedMessages = messagesWithUser;
+  let lastPublished = 0;
   let completed = false;
+  let failure = null;
   try {
     for await (const chunk of provider.chat(plan.messages, { signal })) {
       signal?.throwIfAborted();
-      if (getState().paper !== paper || getState().messages !== messagesWithUser) return;
+      if (getState().paper !== paper || getState().messages !== ownedMessages) return;
       assistantText += chunk;
+      if (Date.now() - lastPublished >= 100) {
+        ownedMessages = [...messagesWithUser, { role: 'assistant', content: assistantText, status: 'generating', id: messageId }];
+        setState({ messages: ownedMessages });
+        lastPublished = Date.now();
+      }
       yield chunk;
     }
     signal?.throwIfAborted();
     completed = true;
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
     // Remove failed turns so a retry does not duplicate the question.
-    if (!completed && getState().paper === paper && getState().messages === messagesWithUser) {
-      setState({ messages, retrievedChunkIndices });
+    if (!completed && getState().paper === paper && getState().messages === ownedMessages) {
+      const partial = assistantText ? { role: 'assistant', content: assistantText,
+        status: signal?.aborted || !failure || failure.name === 'AbortError' ? 'interrupted' : 'failed', id: messageId } : null;
+      setState({ messages: partial ? [...messagesWithUser, partial] : messages, retrievedChunkIndices });
     }
   }
 
-  if (getState().paper !== paper || getState().messages !== messagesWithUser) return;
+  if (getState().paper !== paper || getState().messages !== ownedMessages) return;
 
   // 成功结束：把完整 assistant 回复入 store
   if (assistantText) {
-    const latest = getState().messages;
+    const latest = messagesWithUser;
     setState({
       messages: [
         ...latest,
-        { role: /** @type {const} */ ('assistant'), content: assistantText },
+        { role: /** @type {const} */ ('assistant'), content: assistantText, status: 'complete', id: messageId },
       ],
     });
 
@@ -205,61 +221,40 @@ export async function* chat(userText, signal) {
 // 对话摘要压缩
 // =========================================================
 
-/**
- * 将消息列表格式化为可读文本，供摘要 LLM 使用。
- * @param {Array<{ role: string, content: string }>} msgs
- * @returns {string}
- */
-function formatMessagesForSummary(msgs) {
-  return msgs
-    .map((m) => {
-      const label = m.role === 'user' ? '🧑 用户' : '🤖 AI';
-      return `### ${label}\n${(m.content || '').trim()}`;
-    })
-    .join('\n\n');
-}
-
-/**
- * 检查并触发对话摘要压缩。
- * 当 store.messages 超过 SUMMARIZE_THRESHOLD 时，对溢出消息生成摘要，
- * 合并已有摘要后存入 store.conversationSummary。
- *
- * 增量模式：只压缩"上次已压缩位置"之后的新溢出消息，避免重复发送。
- * 摘要生成失败不抛错——下次发送时退化为无摘要模式（旧消息被滑窗丢弃）。
- *
- * @returns {Promise<void>}
- */
+/** Compress one bounded history fragment and commit its cursor after success. */
 async function maybeSummarize(signal) {
   const { paper, messages, conversationSummary } = getState();
   const overflowEnd = Math.max(0, messages.length - SUMMARIZE_THRESHOLD);
-  const prevUpTo = Math.max(0, Math.min(messages.length, Math.floor((conversationSummary?.summarizedUpTo || 0) / 2) * 2));
+  const prevUpTo = Math.max(0, Math.min(messages.length, Math.floor(conversationSummary?.summarizedUpTo || 0)));
   if (overflowEnd <= prevUpTo) return '';
 
-  // One bounded batch per turn limits request cost. Advance only whole pairs.
+  // Compress a bounded fragment so one long message cannot block later turns.
   const budget = Math.min(8000, Math.floor(getBudgetTokens() * 0.9));
   const previous = trimToTokenBudget(conversationSummary?.text || '', 1200);
-  const batch = [];
-  let end = prevUpTo;
-  const buildMessages = (items) => [
-    { role: 'system', content: SUMMARIZE_CONVERSATION },
-    { role: 'user', content: `已有对话摘要：\n${previous}\n\n请合并以下完整对话，输出更新摘要：\n${formatMessagesForSummary(items)}` },
-  ];
-  while (end + 2 <= overflowEnd) {
-    const pair = messages.slice(end, end + 2);
-    if (pair[0].role !== 'user' || pair[1].role !== 'assistant') break;
-    const candidate = [...batch, ...pair];
-    if (countMessagesTokens(buildMessages(candidate)) > budget) break;
-    batch.push(...pair);
-    end += 2;
+  let index = prevUpTo;
+  let offset = conversationSummary?.pending?.messageIndex === index ? conversationSummary.pending.offset : 0;
+  while (index < overflowEnd && messages[index].role === 'assistant' && messages[index].status && messages[index].status !== 'complete') {
+    index++; offset = 0;
   }
-  if (!batch.length) return '摘要暂缓：旧对话单轮超过压缩预算';
+  if (index >= overflowEnd) return '';
+  const buildMessages = (fragment) => [
+    { role: 'system', content: SUMMARIZE_CONVERSATION },
+    { role: 'user', content: `已有摘要：\n${previous}\n合并新增的 ${messages[index].role} 消息片段（第 ${index} 条，从字符 ${offset} 开始）：\n${fragment}` },
+  ];
+  const allowance = budget - countMessagesTokens(buildMessages('')) - 4;
+  const fragment = trimToTokenBudget(messages[index].content.slice(offset), Math.max(0, allowance));
+  if (!fragment) return '摘要暂缓：提示词超过压缩预算';
+  const nextOffset = offset + fragment.length;
+  const finishedMessage = nextOffset >= messages[index].content.length;
+  const end = finishedMessage ? index + 1 : index;
+  const pending = { messageIndex: end, offset: finishedMessage ? 0 : nextOffset };
 
   try {
     const provider = makeProvider({ requirePaper: false });
-    const result = await provider.chatOnce(buildMessages(batch), { stream: false, signal });
+    const result = await provider.chatOnce(buildMessages(fragment), { stream: false, signal });
     const text = trimToTokenBudget(result.trim(), 1200);
     if (text && !signal?.aborted && getState().paper === paper && getState().messages === messages) {
-      setState({ conversationSummary: { text, summarizedUpTo: end } });
+      setState({ conversationSummary: { text, summarizedUpTo: end, pending } });
     }
     return end < overflowEnd ? '摘要分批处理中' : '';
   } catch (err) {
@@ -295,3 +290,5 @@ function updateChatStatus(stats, task, note = '') {
   if (note) parts.push(note);
   setState({ chatStatus: { text: parts.join(' | ') } });
 }
+
+export { estimateSegmented, prepareSegmented, runSegmented } from './segmented.js';

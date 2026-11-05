@@ -50,6 +50,20 @@ test('Markdown removes active HTML and preserves formulas and formatting', async
     paused.push('new output');
     paused.finalize();
     assert.equal(scroller.scrollTop, 100);
+    const growing = document.createElement('div');
+    document.body.append(growing);
+    const progressive = createStreamingRenderer(growing, { intervalMs: 0 });
+    progressive.push('First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\n');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const stable = growing.querySelector('.md-stream-block');
+    assert.ok(stable);
+    progressive.push('Fourth paragraph.\n\nFifth paragraph.\n\n');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(growing.querySelector('.md-stream-block'), stable);
+    progressive.finalize();
+    assert.match(growing.textContent, /First paragraph/);
+    assert.match(growing.textContent, /Fifth paragraph/);
+
   } finally {
     await server.close();
     dom.window.close();

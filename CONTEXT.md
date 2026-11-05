@@ -23,9 +23,9 @@ The current question is never silently shortened. Oversized questions and templa
 
 ## Conversation compression
 
-After a successful chat, messages older than the most recent 12 become candidates for compression. Each turn compresses at most one bounded batch of complete user/assistant pairs. The summary request is capped at the smaller of 8,000 estimated tokens and the configured usable input budget. Stored summaries are capped at 1,200 estimated tokens.
+After a successful chat, messages older than the most recent 12 become candidates for compression. Each turn compresses one bounded batch. An oversized old message is compressed in fragments with an exclusive UTF-16 cursor, so it cannot permanently block later history. Incomplete assistant replies are retained for display and export but excluded from future model context. The summary request is capped at the smaller of 8,000 estimated tokens and the configured usable input budget. Stored summaries are capped at 1,200 estimated tokens.
 
-The exclusive `summarizedUpTo` index advances only after successful compression and only through messages included in that batch. Failed compression keeps the old summary and index. Large pairs that do not fit are deferred; coverage status states when history was omitted or compression failed. Summaries are lossy, and no claim is made that every omitted detail was preserved.
+The exclusive `summarizedUpTo` index advances only after successful compression and only through content included in that batch; a partial message retains its pending cursor. Failed compression keeps the old summary and index. Large pairs that do not fit are deferred; coverage status states when history was omitted or compression failed. Summaries are lossy, and no claim is made that every omitted detail was preserved.
 
 ## Coverage and lifecycle
 
@@ -43,3 +43,11 @@ Changing the paper clears chat, summary, retrieval indices, and context status. 
 ## Output policy
 
 The app does not send `max_tokens`, `max_completion_tokens`, or `max_output_tokens`. User-facing default task prompts have no fixed word-count ceiling. Input budgets and the internal compressed-history size do not cap displayed answers. Provider/model limits still apply.
+
+## Reading workflows
+
+`chunkPaper()` assigns stable per-page IDs. Requests carry only the selected evidence labels; citation navigation resolves against the complete retained paper. It validates the label, not whether the claim is semantically supported.
+
+Explicit segmented tasks group bounded source chunks. Translation retains completed parts; analysis synthesizes section notes with bounded reduction requests when necessary. Checkpoints are document/configuration-specific and survive archive/autosave recovery. Additional reductions are announced before opting in; no model requests run merely from opening the confirmation dialog.
+
+New v2 archives retain the source text and summary cursor, so recovery can resume context without loading the PDF binary. A matching PDF fingerprint restores the preview while preserving this state. Legacy archives without text remain viewable but need a source document.

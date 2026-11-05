@@ -673,3 +673,14 @@ container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
 - Summary requests and stored summaries are bounded. Advance the exclusive summary index only for successfully compressed complete pairs.
 - Status must report current planned paper/history coverage and omissions, not cumulative retrieval indices.
 - The normative details are in `CONTEXT.md`; update docs and regression tests when these contracts change.
+
+
+## Resumable workflow contracts
+
+- Store analysis text and completion states in the shared store so UI, export and snapshots use the same truth. Incomplete replies remain visible but are excluded from model evidence.
+- Snapshot before queued writes; startup restore must also guard pending document loads. Recovery never starts model requests.
+- Persist segmented checkpoint counts only when completed output arrays match those counts. Never store API keys in checkpoint identities.
+- Explicitly review estimated multi-call work before starting. Preserve completed pieces across interruption.
+- Preserve paper fingerprints for binary reattachment; a matching PDF must not clear history.
+- Streaming rendering caches stable blocks and resolves late Markdown references in one final pass. Never cap answer output to solve rendering cost.
+- Run generated real-PDF browser tests in addition to mocked module tests. Rotated/table layouts are not covered by the prose ordering heuristic.

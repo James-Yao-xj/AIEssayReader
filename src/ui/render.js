@@ -1,3 +1,4 @@
+import { decorateCitations } from './citations.js';
 /* =========================================================
  * src/ui/render.js
  *
@@ -114,57 +115,68 @@ marked.use({ extensions: [blockMathExt, inlineMathExt] });
 export function renderMarkdown(element, markdownText, _opts) {
   element.classList.add('md-body');
   element.innerHTML = toHtml(markdownText || '');
+  decorateCitations(element);
 }
 
 /**
  * 创建一个流式渲染器：push 累积文本按节流渲染；finalize 做最终完整渲染。
  *
  * @param {HTMLElement} element
- * @param {{ intervalMs?: number }} [opts]
+ * @param {{ intervalMs?: number, onUpdate?: (text: string) => void }} [opts]
  * @returns {{ push: (chunk: string) => void, finalize: () => void }}
  */
 export function createStreamingRenderer(element, opts) {
   const intervalMs = opts?.intervalMs ?? 80;
   let buffer = '';
-  /** @type {number | null} */
+  let tail = '';
   let timer = null;
   let finalized = false;
+  let mounted = false;
+  const live = document.createElement('div');
+  live.className = 'md-stream-tail';
 
   function flush() {
     timer = null;
     if (finalized) return;
     const scroller = followingScroller(element);
     element.classList.add('md-body');
-    element.innerHTML = toHtml(buffer);
+    if (!mounted) { element.replaceChildren(live); mounted = true; }
+    // Keep two trailing tokens mutable for tables, fences and list continuations.
+    const tokens = marked.lexer(tail);
+    const stableLength = tokens.slice(0, -2).reduce((length, token) => length + token.raw.length, 0);
+    if (stableLength) {
+      const block = document.createElement('div');
+      block.className = 'md-stream-block';
+      block.innerHTML = toHtml(tail.slice(0, stableLength));
+      element.insertBefore(block, live);
+      tail = tail.slice(stableLength);
+    }
+    live.innerHTML = toHtml(tail);
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    opts?.onUpdate?.(buffer);
   }
 
   return {
     push(chunk) {
-      if (finalized) return;
-      if (!chunk) return;
+      if (finalized || !chunk) return;
       buffer += chunk;
-      // 只在没有待触发的渲染时才排队，保证最多 intervalMs 一次
-      if (timer == null) {
-        timer = window.setTimeout(flush, intervalMs);
-      }
+      tail += chunk;
+      if (timer == null) timer = window.setTimeout(flush, intervalMs);
     },
     finalize() {
       if (finalized) return;
       finalized = true;
-      if (timer != null) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      if (timer != null) clearTimeout(timer);
+      timer = null;
       const scroller = followingScroller(element);
+      // One final pass resolves references defined after their first use.
       element.classList.add('md-body');
       element.innerHTML = toHtml(buffer);
+      decorateCitations(element);
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      opts?.onUpdate?.(buffer);
     },
-    /** 返回当前已累积的原始 markdown 文本（用于保存/导出）。 */
-    getText() {
-      return buffer;
-    },
+    getText() { return buffer; },
   };
 }
 

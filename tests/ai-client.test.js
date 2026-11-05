@@ -72,13 +72,14 @@ test('failed chat restores history so retry sends the question only once', async
   assert.equal(getState().messages.length, 4);
 });
 
-test('consumer cancellation removes a partial user turn from stored history', async () => {
+test('consumer cancellation retains partial output with interrupted status', async () => {
   reset();
   globalThis.fetch = async () => new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\ndata: [DONE]\n');
   const iterator = chat('question');
   await iterator.next();
   await iterator.return();
-  assert.deepEqual(getState().messages, []);
+  assert.equal(getState().messages[1].content, 'partial');
+  assert.equal(getState().messages[1].status, 'interrupted');
 });
 
 const successStream = () => new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n');
@@ -121,24 +122,27 @@ test('summary input is bounded, advances whole pairs, and clamps old and new sum
   assert.ok(summaryRequest);
   const summary = getState().conversationSummary;
   assert.ok(summary.summarizedUpTo > 2 && summary.summarizedUpTo < 30);
-  assert.equal(summary.summarizedUpTo % 2, 0);
+  assert.equal(summary.pending.offset, 0);
   assert.ok(estimateTokens(summary.text) <= 1200);
   assert.match(getState().chatStatus.text, /分批/);
 });
 
-test('an oversized completed pair cannot trigger an over-budget compression request', async () => {
+test('an oversized old message makes bounded fragment progress across turns', async () => {
+  const { countMessagesTokens } = await import('../src/ai/context.js');
   reset();
   setState({ messages: history(12, i => i < 2 ? '中'.repeat(12000) : `message ${i}`) });
-  let calls = 0;
   globalThis.fetch = async (_url, options) => {
-    calls++;
-    assert.equal(JSON.parse(options.body).stream, true);
-    return successStream();
+    const body = JSON.parse(options.body);
+    if (body.stream) return successStream();
+    assert.ok(countMessagesTokens(body.messages) <= 8000);
+    return Response.json({ choices: [{ message: { content: 'Fragment summary' } }] });
   };
   for await (const _chunk of chat('question')) { /* Consume the reply. */ }
-  assert.equal(calls, 1);
-  assert.equal(getState().conversationSummary, null);
-  assert.match(getState().chatStatus.text, /摘要暂缓/);
+  const first = getState().conversationSummary.pending.offset;
+  assert.ok(first > 0);
+  assert.equal(getState().conversationSummary.summarizedUpTo, 0);
+  for await (const _chunk of chat('next')) { /* Consume the reply. */ }
+  assert.ok(getState().conversationSummary.pending.offset > first);
 });
 
 test('summary failure reports omitted history without advancing its boundary', async () => {
@@ -161,4 +165,17 @@ test('oversized full-paper tasks fail before fetch and replace stale coverage', 
   await assert.rejects(summarize().next());
   assert.equal(called, false);
   assert.match(getState().chatStatus.text, /上下文未发送/);
+});
+
+test('streamed partial answers are autosave-visible and failure keeps explicit status', async () => {
+  reset();
+  globalThis.fetch = async () => new Response('data: {"choices":[{"delta":{"content":"Saved partial"}}]}\n');
+  const iterator = chat('question');
+  await iterator.next();
+  assert.equal(getState().messages.at(-1).status, 'generating');
+  assert.equal(getState().messages.at(-1).content, 'Saved partial');
+  await assert.rejects(iterator.next(), /提前结束/);
+  assert.equal(getState().messages.at(-1).status, 'failed');
+  assert.equal(getState().messages.at(-1).content, 'Saved partial');
+  assert.ok(getState().contextEvidence[0].id.startsWith('p1-c'));
 });

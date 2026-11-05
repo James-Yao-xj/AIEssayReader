@@ -88,3 +88,26 @@ test('a rejected compatibility request clears earlier retrieval metadata', () =>
   assert.throws(() => assemble({ task: 'translate', paper: { fullText: 'x'.repeat(200000) } }));
   assert.deepEqual(getLastRetrievedIndices(), []);
 });
+
+test('page citations stay stable across selection and resolve only known chunks', async () => {
+  const { chunkPaper, resolveCitation } = await import('../src/ai/context.js');
+  const paper = { fullText: 'Fallback must not change page IDs', pages: [
+    { pageNum: 1, text: 'First page. '.repeat(400) }, { pageNum: 2, text: 'Second page.' },
+  ] };
+  const chunks = chunkPaper(paper);
+  assert.equal(chunks[0].id, 'p1-c1');
+  assert.equal(chunks.at(-1).id, 'p2-c1');
+  assert.equal(resolveCitation(paper, 'p2-c1').pageNum, 2);
+  assert.equal(resolveCitation(paper, 'p99-c1'), null);
+  const plan = planContext({ task: 'chat', paper, messages: [{ role: 'user', content: 'Explain page two' }], budgetTokens: 3000 });
+  for (const evidence of plan.evidence) assert.ok(plan.messages[0].content.includes(`[${evidence.id}]`));
+});
+
+test('incomplete assistant text is retained in history storage but excluded from context', () => {
+  const messages = [ { role: 'user', content: 'Previous question' },
+    { role: 'assistant', content: 'UNTRUSTED PARTIAL ANSWER', status: 'interrupted' },
+    { role: 'user', content: 'Next question' } ];
+  const plan = planContext({ task: 'chat', paper: { fullText: 'Evidence' }, messages });
+  assert.ok(!plan.messages.some(message => message.content.includes('UNTRUSTED PARTIAL')));
+  assert.ok(plan.messages.some(message => message.content === 'Previous question'));
+});

@@ -53,10 +53,23 @@ function paperChunks(text) {
   });
 }
 
+/** Return stable page-local citation chunks in reading order. */
+export function chunkPaper(paper) {
+  const pages = paper?.pages?.length ? paper.pages : [{ pageNum: 1, text: paper?.fullText || '' }];
+  return pages.flatMap((page, index) => paperChunks(page.text).map((text, chunk) => ({
+    id: `p${page.pageNum || index + 1}-c${chunk + 1}`, pageNum: page.pageNum || index + 1, text,
+  })));
+}
+
+/** Resolve an exact citation against the current document, including old turns. */
+export function resolveCitation(paper, id) {
+  return chunkPaper(paper).find(chunk => chunk.id === id) || null;
+}
+
 /** Build the system message with the global style before the task template. */
 function buildSystem(paperText, template, summary) {
   const parts = [GLOBAL_STYLE,
-    '以下是论文内容，作为回答的依据。只可引用实际载入的片段；未载入部分不得编造。',
+    '以下是论文内容，作为回答的依据。引用必须使用实际载入片段的 [pN-cM] 标识，不得编造标识或引用未载入内容。',
     paperText || '（本轮未载入论文片段。）', template];
   if (summary) parts.push('# 已压缩的对话摘要\n' + summary);
   return parts.join('\n\n---\n\n');
@@ -78,7 +91,7 @@ function buildSystem(paperText, template, summary) {
  */
 export function planContext({ task, paper, messages = [], recentN = 8, templates,
   conversationSummary, retrievedChunkIndices = [], summarizedUpTo = 0,
-  budgetTokens = DEFAULT_BUDGET }) {
+  pendingSummary, budgetTokens = DEFAULT_BUDGET }) {
   if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
     throw new Error('上下文预算无效，请在设置中填写正数。');
   }
@@ -86,8 +99,9 @@ export function planContext({ task, paper, messages = [], recentN = 8, templates
   const custom = templates?.[task];
   const template = typeof custom === 'string' && custom.trim() ? custom.trim() : TASK_TEMPLATES[task];
   if (!template) throw new Error('未知的 AI 任务。');
-  const text = paper?.fullText || '';
-  const chunks = paperChunks(text);
+  const evidence = chunkPaper(paper);
+  const chunks = evidence.map(chunk => `[${chunk.id}]\n${chunk.text}`);
+  const text = chunks.join('\n\n');
   const summary = task === 'chat' && conversationSummary
     ? trimToTokenBudget(conversationSummary.trim(), Math.min(1200, Math.floor(limit * 0.1))) : '';
   const system = (content) => ({ role: 'system', content: buildSystem(content, template, summary) });
@@ -98,6 +112,7 @@ export function planContext({ task, paper, messages = [], recentN = 8, templates
       historyMessages: task === 'chat' ? selectedMessages.length - 1 : 0,
       omittedMessages: task === 'chat' ? messages.length - (selectedMessages.length - 1) : 0 },
     retrievedIndices: indices,
+    evidence: indices.map(index => evidence[index]),
   });
 
   // Full-paper tasks must never silently change into partial-paper tasks.
@@ -121,7 +136,10 @@ export function planContext({ task, paper, messages = [], recentN = 8, templates
   }
   const summaryEnd = summary && Number.isFinite(summarizedUpTo)
     ? Math.min(Math.max(0, Math.floor(summarizedUpTo)), Math.max(0, messages.length - 1)) : 0;
-  const unsummarized = messages.slice(summaryEnd, latest ? -1 : undefined);
+  const unsummarized = messages.slice(summaryEnd, latest ? -1 : undefined)
+    .map((message, index) => pendingSummary?.messageIndex === summaryEnd + index
+      ? { ...message, content: message.content.slice(pendingSummary.offset) } : message)
+    .filter(message => message.content && (message.role !== 'assistant' || !message.status || message.status === 'complete'));
   const recentLimit = Math.max(0, Math.floor(recentN) * 2 - current.length);
   let history = recentLimit ? unsummarized.slice(-recentLimit) : [];
   const historyBudget = Math.floor((limit - fixedCost) * 0.4);

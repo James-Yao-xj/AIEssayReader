@@ -8,7 +8,8 @@
  * ========================================================= */
 
 const DB_NAME = 'aie-archives';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const SESSION_STORE = 'sessions';
 const STORE_NAME = 'archives';
 
 /** @type {IDBDatabase | null} */
@@ -26,6 +27,7 @@ function openDB() {
 
     req.onupgradeneeded = (event) => {
       const db = /** @type {IDBDatabase} */ (/** @type {any} */ (event.target).result);
+      if (!db.objectStoreNames.contains(SESSION_STORE)) db.createObjectStore(SESSION_STORE);
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, {
           keyPath: 'id',
@@ -130,5 +132,29 @@ export async function deleteArchive(id) {
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(new Error(`删除存档失败：${tx.error?.message || '事务已取消'}`));
     req.onerror = () => reject(new Error(`删除存档失败：${req.error?.message || '未知错误'}`));
+  });
+}
+
+/** Save the latest session separately from user-created archives. */
+export async function saveSession(snapshot) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).put(snapshot, 'latest');
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(new Error(`自动保存失败：${tx.error?.message || '事务已取消'}`));
+    tx.onerror = () => reject(new Error(`自动保存失败：${tx.error?.message || '写入异常'}`));
+  });
+}
+
+/** Read the last committed session, without starting any model requests. */
+export async function loadSession() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SESSION_STORE, 'readonly');
+    const request = tx.objectStore(SESSION_STORE).get('latest');
+    request.onsuccess = () => resolve(request.result ?? null);
+    tx.onabort = () => reject(new Error('无法读取自动保存会话。'));
+    request.onerror = () => reject(new Error(`无法读取自动保存会话：${request.error?.message || '读取异常'}`));
   });
 }

@@ -75,3 +75,14 @@ PDF 同时最多渲染两页，单页最多四百万像素；缓存超过八页�
 ## Context budget
 
 The reading model settings include an estimated input token budget (default 24,000). Keep it below the model capacity to reserve output space. Chat selects relevant paper chunks; full-paper tasks reject oversized input rather than silently truncate. The AI status line reports current coverage. See [CONTEXT.md](./CONTEXT.md) for the estimation method and limitations.
+
+## Resumable reading
+
+- Archives and automatic recovery retain extracted text, page metadata, partial results and segmented progress. The original PDF binary is not stored. Reopen the same fingerprint-matching PDF to restore its visual preview without discarding chat.
+- Incomplete answers are labelled and can be archived or exported. No output token cap is sent to the model.
+- Source markers such as `[p1-c1]` link to existing page chunks. Identifier validation does not verify the truth of a model's claim.
+- Use the explicit segmented-processing button to review estimated model calls before starting. Completed sections survive cancellation; changing model settings requires a new plan. Very large section notes can require additional reduction calls.
+- OCR reports failed pages and supports an explicit retry of failed pages only.
+- Extraction supports clear two-column horizontal prose. Rotated text, tables and complex layouts still require checking against the PDF.
+
+Tests: `npm test` runs module/integration checks. `npx playwright install chromium` then `npm run test:e2e` runs real-browser checks with generated PDF fixtures and mocked model responses. On a machine with Chrome installed, use `PLAYWRIGHT_CHROME=1 npm run test:e2e`.

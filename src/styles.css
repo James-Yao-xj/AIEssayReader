@@ -2630,3 +2630,8 @@ body {
   margin-inline-end: 8px;
   vertical-align: middle;
 }
+
+/* Keep offscreen chat layout cheap without discarding its content. */
+.chat-bubble { content-visibility: auto; contain-intrinsic-size: auto 160px; }
+.paper-citation { color: var(--accent, #2563eb); cursor: pointer; background: transparent; border: 0; font: inherit; padding: 0; }
+.paper-citation:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
