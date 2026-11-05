@@ -189,7 +189,7 @@ export function initSettings() {
                     <label class="settings-field">
                       <span class="settings-field__label">估算输入预算（token）</span>
                       <input type="number" name="reading.contextTokens" min="2000" max="200000" step="1" value="24000" aria-describedby="reading-context-hint" />
-                      <span class="settings-field__hint" id="reading-context-hint">包含论文、提示词和对话，按文本近似估算，并在预算内预留约 10% 应对估算误差。不会自动检测模型窗口或使用模型精确分词器。请按模型限制手动设置，并为模型输出另外留出空间。</span>
+                      <span class="settings-field__hint" id="reading-context-hint">仅限制输入，不设置回答的输出 token 上限。包含论文、提示词和对话，按文本近似估算，并在预算内预留约 10% 应对估算误差。不会自动检测模型窗口或使用模型精确分词器。请按模型限制手动设置，并为模型输出另外留出空间。</span>
                     </label>
                   </fieldset>
                 </div>

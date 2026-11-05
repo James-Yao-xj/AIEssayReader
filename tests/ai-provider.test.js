@@ -86,3 +86,18 @@ test('non-streaming truncated or filtered text cannot become a valid summary', a
     await assert.rejects(provider().chatOnce([], { stream: false }), /上限|过滤/);
   }
 });
+
+test('requests never set an output token cap in streaming or non-streaming mode', async () => {
+  for (const stream of [true, false]) {
+    globalThis.fetch = async (_url, options) => {
+      const body = JSON.parse(options.body);
+      for (const field of ['max_tokens', 'max_completion_tokens', 'max_output_tokens']) {
+        assert.equal(Object.hasOwn(body, field), false);
+      }
+      return stream
+        ? new Response('data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}\n')
+        : Response.json({ choices: [{ message: { content: 'answer' } }] });
+    };
+    assert.equal(await provider().chatOnce([], { stream }), 'answer');
+  }
+});

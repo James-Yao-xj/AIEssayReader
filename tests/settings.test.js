@@ -73,3 +73,15 @@ test('flat settings migrate a valid input budget and default a missing budget', 
   stored = JSON.stringify({ baseUrl: 'http://localhost:11434/v1' });
   assert.equal(loadSettings().reading.contextTokens, 24000);
 });
+
+test('old default word caps upgrade while custom prompts remain unchanged', async () => {
+  const { DEFAULT_SETTINGS } = await import('../src/config/defaults.js');
+  const old = DEFAULT_SETTINGS.promptSummarize.replace(
+    '- 根据论文内容充分展开，不设置固定字数上限。', '- 总字数控制在 800~1200 字。');
+  let raw = JSON.stringify({ promptSummarize: old });
+  globalThis.localStorage = { getItem: () => raw };
+  assert.equal(loadSettings().promptSummarize, DEFAULT_SETTINGS.promptSummarize);
+  raw = JSON.stringify({ promptSummarize: 'My custom prompt' });
+  assert.equal(loadSettings().promptSummarize, 'My custom prompt');
+  delete globalThis.localStorage;
+});

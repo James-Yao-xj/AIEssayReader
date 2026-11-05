@@ -39,3 +39,7 @@ Changing the paper clears chat, summary, retrieval indices, and context status. 
 - `src/ai/client.js`: requests, bounded incremental compression, status, cancellation guards.
 - `src/config/storage.js` and `src/ui/settings.js`: budget persistence and editing.
 - `tests/context.test.js` and `tests/ai-client.test.js`: budget, coverage, compression, and lifecycle regressions.
+
+## Output policy
+
+The app does not send `max_tokens`, `max_completion_tokens`, or `max_output_tokens`. User-facing default task prompts have no fixed word-count ceiling. Input budgets and the internal compressed-history size do not cap displayed answers. Provider/model limits still apply.

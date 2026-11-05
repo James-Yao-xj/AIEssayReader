@@ -192,6 +192,16 @@ function deepMergeSettings(defaults, user) {
   if (typeof user.promptTranslate === 'string') result.promptTranslate = user.promptTranslate;
   if (typeof user.promptChat === 'string') result.promptChat = user.promptChat;
 
+  // Upgrade only exact former defaults. Keep custom user templates unchanged.
+  if (result.promptSummarize === DEFAULT_SETTINGS.promptSummarize.replace(
+    '- 根据论文内容充分展开，不设置固定字数上限。', '- 总字数控制在 800~1200 字。')) {
+    result.promptSummarize = DEFAULT_SETTINGS.promptSummarize;
+  }
+  if (result.promptExplainConcepts === DEFAULT_SETTINGS.promptExplainConcepts.replace(
+    '说明这些概念如何串成论文主线，根据需要充分展开。', '简述这些概念如何串成论文主线（200 字以内）。')) {
+    result.promptExplainConcepts = DEFAULT_SETTINGS.promptExplainConcepts;
+  }
+
   return result;
 }
 
