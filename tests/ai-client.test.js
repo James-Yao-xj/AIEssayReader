@@ -80,3 +80,85 @@ test('consumer cancellation removes a partial user turn from stored history', as
   await iterator.return();
   assert.deepEqual(getState().messages, []);
 });
+
+const successStream = () => new Response('data: {"choices":[{"delta":{"content":"Answer"},"finish_reason":"stop"}]}\n');
+const history = (count, content = i => `UNIQUE_MESSAGE_${i}`) => Array.from({ length: count }, (_, i) => ({
+  role: i % 2 ? 'assistant' : 'user', content: content(i),
+}));
+
+test('summarized prefix is not repeated as raw history in the next request', async () => {
+  reset();
+  setState({ messages: history(12), conversationSummary: { text: 'Earlier discussion', summarizedUpTo: 4 } });
+  globalThis.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    if (!request.stream) return Response.json({ choices: [{ message: { content: 'Summary' } }] });
+    const contents = request.messages.slice(1).map(m => m.content);
+    assert.equal(contents.includes('UNIQUE_MESSAGE_0'), false);
+    assert.equal(contents.includes('UNIQUE_MESSAGE_3'), false);
+    assert.equal(contents.includes('UNIQUE_MESSAGE_4'), true);
+    return successStream();
+  };
+  for await (const _chunk of chat('Next question')) { /* Consume the reply. */ }
+  assert.match(getState().chatStatus.text, /省略/);
+});
+
+test('summary input is bounded, advances whole pairs, and clamps old and new summaries', async () => {
+  const { countMessagesTokens, estimateTokens } = await import('../src/ai/context.js');
+  reset();
+  const messages = history(40, i => `TURN_${i}: ${'中'.repeat(1000)}`);
+  setState({ messages, conversationSummary: { text: '旧'.repeat(10000), summarizedUpTo: 2 } });
+  let summaryRequest;
+  globalThis.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    if (request.stream) return successStream();
+    summaryRequest = request;
+    assert.ok(countMessagesTokens(request.messages) <= 8000);
+    assert.ok(!request.messages[1].content.includes('TURN_0:'));
+    assert.ok(!request.messages[1].content.includes('TURN_1:'));
+    return Response.json({ choices: [{ message: { content: '新'.repeat(10000) } }] });
+  };
+  for await (const _chunk of chat('question')) { /* Consume the reply. */ }
+  assert.ok(summaryRequest);
+  const summary = getState().conversationSummary;
+  assert.ok(summary.summarizedUpTo > 2 && summary.summarizedUpTo < 30);
+  assert.equal(summary.summarizedUpTo % 2, 0);
+  assert.ok(estimateTokens(summary.text) <= 1200);
+  assert.match(getState().chatStatus.text, /分批/);
+});
+
+test('an oversized completed pair cannot trigger an over-budget compression request', async () => {
+  reset();
+  setState({ messages: history(12, i => i < 2 ? '中'.repeat(12000) : `message ${i}`) });
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    assert.equal(JSON.parse(options.body).stream, true);
+    return successStream();
+  };
+  for await (const _chunk of chat('question')) { /* Consume the reply. */ }
+  assert.equal(calls, 1);
+  assert.equal(getState().conversationSummary, null);
+  assert.match(getState().chatStatus.text, /摘要暂缓/);
+});
+
+test('summary failure reports omitted history without advancing its boundary', async () => {
+  reset();
+  setState({ messages: history(24), conversationSummary: { text: 'Prior summary', summarizedUpTo: 2 } });
+  globalThis.fetch = async (_url, options) => JSON.parse(options.body).stream
+    ? successStream() : new Response('unavailable', { status: 503 });
+  for await (const _chunk of chat('question')) { /* Consume the reply. */ }
+  assert.equal(getState().conversationSummary.summarizedUpTo, 2);
+  assert.match(getState().chatStatus.text, /省略/);
+  assert.match(getState().chatStatus.text, /摘要失败/);
+});
+
+test('oversized full-paper tasks fail before fetch and replace stale coverage', async () => {
+  const { summarize } = await import('../src/ai/client.js');
+  reset();
+  setState({ paper: { fullText: '中'.repeat(100000) }, chatStatus: { text: 'old coverage' } });
+  let called = false;
+  globalThis.fetch = async () => { called = true; return successStream(); };
+  await assert.rejects(summarize().next());
+  assert.equal(called, false);
+  assert.match(getState().chatStatus.text, /上下文未发送/);
+});

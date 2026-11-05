@@ -186,6 +186,11 @@ export function initSettings() {
                       <input type="number" name="reading.temperature" min="0" max="2" step="0.1" value="0.3" />
                       <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
                     </label>
+                    <label class="settings-field">
+                      <span class="settings-field__label">估算输入预算（token）</span>
+                      <input type="number" name="reading.contextTokens" min="2000" max="200000" step="1" value="24000" aria-describedby="reading-context-hint" />
+                      <span class="settings-field__hint" id="reading-context-hint">包含论文、提示词和对话，按文本近似估算，并在预算内预留约 10% 应对估算误差。不会自动检测模型窗口或使用模型精确分词器。请按模型限制手动设置，并为模型输出另外留出空间。</span>
+                    </label>
                   </fieldset>
                 </div>
                 <div class="settings-basic__drawer-actions">
@@ -419,6 +424,7 @@ function syncFormFromStore() {
   setFieldValue('reading.baseUrl', rd.baseUrl || '');
   setFieldValue('reading.model', rd.model || '');
   setFieldValue('reading.temperature', String(rd.temperature ?? 0.3));
+  setFieldValue('reading.contextTokens', String(rd.contextTokens ?? 24000));
   // API Key 永不回显明文
   syncApiKeyField('reading.apiKey', rd.apiKey);
 
@@ -658,6 +664,7 @@ async function save() {
   // 收集两组模型配置
   const recCfg = collectModelConfig(fd, 'recognition');
   const readCfg = collectModelConfig(fd, 'reading');
+  const contextTokens = Number(String(fd.get('reading.contextTokens') || '').trim());
 
   // 提示词模板：trim 后保存；纯空白视为"使用内置默认"
   const promptSummarize = String(fd.get('promptSummarize') || '').trim();
@@ -685,6 +692,11 @@ async function save() {
     return;
   }
 
+  if (!Number.isInteger(contextTokens) || contextTokens < 2000 || contextTokens > 200000) {
+    showError('估算输入预算需为 2000~200000 之间的整数。');
+    return;
+  }
+
   // 字体大小范围校验
   if (!Number.isFinite(fontSize) || fontSize < 12 || fontSize > 24 || !Number.isInteger(fontSize)) {
     showError('正文字号需为 12~24 之间的整数。');
@@ -704,12 +716,13 @@ async function save() {
     temperature: recCfg.temperature,
   };
 
-  /** @type {import('../config/defaults.js').ModelConfig} */
+  /** @type {import('../config/defaults.js').Settings['reading']} */
   const reading = {
     baseUrl: readCfg.baseUrl,
     apiKey: fd.has('reading.clearApiKey') ? '' : readCfg.apiKey ? readCfg.apiKey : currentReading.apiKey || '',
     model: readCfg.model,
     temperature: readCfg.temperature,
+    contextTokens,
   };
 
   /** @type {import('../config/defaults.js').Settings} */

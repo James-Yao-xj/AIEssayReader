@@ -77,3 +77,12 @@ test('DONE ends a text stream and cancels its reader', async () => {
   assert.equal(await provider().chatOnce([]), 'ok');
   assert.equal(cancelled, true);
 });
+
+test('non-streaming truncated or filtered text cannot become a valid summary', async () => {
+  for (const reason of ['length', 'content_filter']) {
+    globalThis.fetch = async () => Response.json({ choices: [{
+      finish_reason: reason, message: { content: 'partial summary' },
+    }] });
+    await assert.rejects(provider().chatOnce([], { stream: false }), /上限|过滤/);
+  }
+});

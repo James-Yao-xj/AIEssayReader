@@ -71,3 +71,7 @@ PDF 同时最多渲染两页，单页最多四百万像素；缓存超过八页�
 - **扫描件 PDF**：无文本层的纯扫描 PDF 需要在中栏使用 AI 视觉识别，并配置支持图片输入的识别模型。
 - **超长论文**：对话会检索相关段落并压缩历史；全文分析仍受字符预算和模型上下文窗口限制，可能截断。
 - **`standardFontDataUrl` 警告**：pdf.js 对极少数内嵌字体（CJK）渲染 canvas 时可能缺字形，属于 pdf.js 已知问题，拉丁论文不受影响。
+
+## Context budget
+
+The reading model settings include an estimated input token budget (default 24,000). Keep it below the model capacity to reserve output space. Chat selects relevant paper chunks; full-paper tasks reject oversized input rather than silently truncate. The AI status line reports current coverage. See [CONTEXT.md](./CONTEXT.md) for the estimation method and limitations.

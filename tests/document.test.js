@@ -14,6 +14,12 @@ test('document changes clear analysis and archive restore replaces missing tabs'
     const pane = await server.ssrLoadModule('/src/ui/aiPane.js');
     const store = await server.ssrLoadModule('/src/state/store.js');
     pane.initAiPane();
+    store.setState({ chatStatus: { text: 'Context coverage test' } });
+    const contextStatus = document.querySelector('[data-chat-status]');
+    assert.equal(contextStatus.getAttribute('role'), 'status');
+    assert.equal(contextStatus.closest('[role="tabpanel"]'), null);
+    assert.equal(contextStatus.textContent, 'Context coverage test');
+
     const tabs = [...document.querySelectorAll('[role="tab"]')];
     assert.equal(tabs.filter(tab => tab.tabIndex === 0).length, 1);
     tabs[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));

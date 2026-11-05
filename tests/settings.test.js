@@ -40,3 +40,36 @@ test('legacy settings migration clamps temperature and preserves keyless setup',
   assert.equal(settings.reading.apiKey, '');
   assert.equal(settings.reading.baseUrl, 'http://192.168.1.2/v1');
 });
+
+test('input budget defaults survive old and malformed storage', () => {
+  let stored;
+  globalThis.localStorage = { getItem: () => stored, setItem: (_key, value) => { stored = value; } };
+  assert.equal(loadSettings().reading.contextTokens, 24000);
+  for (const value of [null, '32000', {}, [], NaN, Infinity]) {
+    assert.equal(saveSettings({ reading: { contextTokens: value } }).reading.contextTokens, 24000);
+  }
+  stored = JSON.stringify({ reading: { model: 'custom' } });
+  assert.equal(loadSettings().reading.contextTokens, 24000);
+  assert.equal(loadSettings().reading.model, 'custom');
+});
+
+test('input budget persists, rounds, clamps and stays reading-only', () => {
+  let stored;
+  globalThis.localStorage = { getItem: () => stored, setItem: (_key, value) => { stored = value; } };
+  const saved = saveSettings({ reading: { contextTokens: 32123.6, model: 'reader' }, recognition: { model: 'ocr', contextTokens: 1 } });
+  assert.equal(saved.reading.contextTokens, 32124);
+  assert.equal(loadSettings().reading.contextTokens, 32124);
+  assert.equal(saved.recognition.model, 'ocr');
+  assert.equal(Object.hasOwn(saved.recognition, 'contextTokens'), false);
+  assert.equal(saveSettings({ reading: { contextTokens: -1 } }).reading.contextTokens, 2000);
+  assert.equal(saveSettings({ reading: { contextTokens: 999999 } }).reading.contextTokens, 200000);
+});
+
+test('flat settings migrate a valid input budget and default a missing budget', () => {
+  let stored = JSON.stringify({ baseUrl: 'http://localhost:11434/v1', contextTokens: 64000 });
+  globalThis.localStorage = { getItem: () => stored, setItem: (_key, value) => { stored = value; } };
+  assert.equal(loadSettings().reading.contextTokens, 64000);
+  assert.equal(JSON.parse(stored).reading.contextTokens, 64000);
+  stored = JSON.stringify({ baseUrl: 'http://localhost:11434/v1' });
+  assert.equal(loadSettings().reading.contextTokens, 24000);
+});

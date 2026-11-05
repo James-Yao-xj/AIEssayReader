@@ -26,7 +26,7 @@ import {
 /**
  * @typedef {Object} Settings
  * @property {ModelConfig} recognition 文本识别模型配置（PDF 视觉 OCR，逐页转写）。
- * @property {ModelConfig} reading     文本阅读模型配置（总结/解释/批判/对话）。
+ * @property {ModelConfig & {contextTokens: number}} reading     文本阅读模型配置（总结/解释/批判/对话）。
  * @property {number} fontSize                    阅读区域字体大小 (px)，范围 12~24，默认 14。
  * @property {string} s2ApiKey                     Semantic Scholar API Key（可选，提升检索配额，缺省走匿名）。
  * @property {string} promptSummarize       总结论文的提示词模板。
@@ -52,6 +52,8 @@ export const DEFAULT_SETTINGS = {
     apiKey: '',
     model: 'gpt-4o-mini',
     temperature: 0.3,
+    // Estimated input tokens. The planner reserves ten percent for estimation error.
+    contextTokens: 24000,
   },
   // 阅读区域字体大小 (px)，范围 12~24
   fontSize: 14,

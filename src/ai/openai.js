@@ -81,6 +81,10 @@ export function createOpenAIProvider(config) {
     if (!stream) {
       const json = await res.json();
       if (json?.error) throw new Error(json.error.message || 'AI 服务返回错误。');
+      const reason = json?.choices?.[0]?.finish_reason;
+      // Incomplete summaries must not replace the original conversation.
+      if (reason === 'length') throw new Error('AI 输出达到长度上限，请缩短输入或调整模型输出容量后重试。');
+      if (reason === 'content_filter') throw new Error('AI 输出被内容过滤中止，请调整输入后重试。');
       const content = json?.choices?.[0]?.message?.content;
       if (typeof content !== 'string' || !content.trim()) throw new Error('AI 服务未返回文本内容。');
       if (typeof content === 'string' && content.length > 0) {

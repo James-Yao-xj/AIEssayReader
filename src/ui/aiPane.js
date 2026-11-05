@@ -516,6 +516,7 @@ export function initAiPane() {
           id="tab-${t.id}" aria-controls="panel-${t.id}" data-tab="${t.id}" aria-selected="false">${t.label}</button>`,
       ).join('')}
     </div>
+    <div class="chat-status" data-chat-status role="status" aria-live="polite" hidden></div>
     <div class="ai-body">
       ${renderAnalyzeTab('summarize', '总结', '生成结构化的全文总结（一句话/背景/方法/结果/局限）。')}
       ${renderAnalyzeTab('explainConcepts', '解释概念', '抽取并解释论文中的关键概念（含官方定义 + 通俗解释）。')}
@@ -614,7 +615,6 @@ function renderChatTab() {
     <section class="ai-pane__section ai-pane__section--chat" data-section="chat" hidden>
       <div class="ai-error" data-error hidden></div>
       <div class="chat-list" data-chat-list></div>
-      <div class="chat-status" data-chat-status hidden></div>
       <div class="chat-composer">
         <textarea class="chat-input" data-chat-input rows="2"
           placeholder="基于当前论文提问…（Enter 发送 · Shift+Enter 换行）"></textarea>

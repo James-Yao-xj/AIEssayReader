@@ -175,6 +175,8 @@ function deepMergeSettings(defaults, user) {
     }
   }
 
+  result.reading.contextTokens = normalizeContextTokens(user.reading?.contextTokens);
+
   // 合并字体大小（钳制到 12~24 范围，防御 corrupted localStorage）
   if (typeof user.fontSize === 'number' && Number.isFinite(user.fontSize)) {
     result.fontSize = Math.min(24, Math.max(12, Math.round(user.fontSize)));
@@ -221,6 +223,8 @@ function migrateFromFlat(old) {
     result.reading.temperature = Math.min(2, Math.max(0, old.temperature));
   }
 
+  result.reading.contextTokens = normalizeContextTokens(old.contextTokens);
+
   // 提示词也一起搬
   if (typeof old.promptSummarize === 'string') result.promptSummarize = old.promptSummarize;
   if (typeof old.promptExplainConcepts === 'string') result.promptExplainConcepts = old.promptExplainConcepts;
@@ -240,4 +244,11 @@ function migrateFromFlat(old) {
     reading: { model: result.reading?.model, baseUrl: result.reading?.baseUrl, keyLen: result.reading?.apiKey?.length || 0 },
   });
   return result;
+}
+
+/** Normalize a stored input token budget without accepting numeric strings. */
+function normalizeContextTokens(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(200000, Math.max(2000, Math.round(value)))
+    : DEFAULT_SETTINGS.reading.contextTokens;
 }

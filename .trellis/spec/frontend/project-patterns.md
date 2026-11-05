@@ -663,3 +663,13 @@ container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
 - Parse math at Markdown token boundaries, never by rewriting code spans or fences. Measure scroll-follow state before replacing content.
 - Modal dialogs keep keyboard focus and restore the trigger. Tabs use roving focus and Arrow/Home/End navigation.
 - API keys are optional for HTTP(S) endpoints. Omit empty Authorization headers. Streams must signal completion and reject malformed or empty data.
+
+## Current context contract (supersedes earlier character-budget examples)
+
+- `planContext` is the source of truth for request admission and current coverage. It is pure; legacy `assemble` wraps it.
+- All text tasks use the configured estimated input-token budget with a ten percent reserve. Do not describe this heuristic as model-exact token counting.
+- Full-paper tasks reject oversized inputs before sending, rather than truncate content or silently run multiple paid requests.
+- Chat reserves the complete current question, excludes successfully summarized history, and fits history and whole paper chunks in the remaining budget.
+- Summary requests and stored summaries are bounded. Advance the exclusive summary index only for successfully compressed complete pairs.
+- Status must report current planned paper/history coverage and omissions, not cumulative retrieval indices.
+- The normative details are in `CONTEXT.md`; update docs and regression tests when these contracts change.

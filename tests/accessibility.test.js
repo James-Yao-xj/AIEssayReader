@@ -59,8 +59,17 @@ test('settings dialog restores trigger focus and permits clearing saved keys', a
     assert.equal(document.querySelector('.settings-basic__drawer').inert, true);
     assert.equal(document.querySelector('[name="reading.apiKey"]').value, '');
     document.querySelector('[name="reading.clearApiKey"]').checked = true;
+    assert.equal(document.querySelector('[name="reading.contextTokens"]').value, '24000');
+    document.querySelector('[name="reading.contextTokens"]').value = '1999';
+    document.querySelector('#settings-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    assert.equal(store.getState().settings.reading.contextTokens, 24000);
+    assert.equal(document.querySelector('.settings-modal').hidden, false);
+    assert.match(document.querySelector('#settings-error').textContent, /2000~200000/);
+    document.querySelector('[name="reading.contextTokens"]').value = '64000';
     document.querySelector('#settings-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
     assert.equal(store.getState().settings.reading.apiKey, '');
+    assert.equal(store.getState().settings.reading.contextTokens, 64000);
+    assert.equal(Object.hasOwn(store.getState().settings.recognition, 'contextTokens'), false);
     assert.equal(document.activeElement, trigger);
   } finally {
     await server.close();
