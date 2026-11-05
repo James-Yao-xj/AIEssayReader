@@ -1,3 +1,5 @@
+import { showSegmentedDialog } from './segmentedDialog.js';
+import { showDownloadDialog } from './exportDialog.js';
 /* =========================================================
  * src/ui/aiPane.js
  *
@@ -35,6 +37,9 @@ let root = null;
 
 /** @type {AbortController | null} */
 let currentController = null;
+// Stop queued DOM writes when the document changes.
+let paneVersion = 0;
+let currentRenderer = null;
 
 /** 相关论文结果条目徽标元素映射：paperId → 徽标 <a>。 */
 const badgeEls = /** @type {Map<string, HTMLElement>} */ (new Map());
@@ -45,23 +50,6 @@ let badgeAbort = null;
 /** 上次已预填相关论文搜索框的论文名（用于检测 paper 切换）。 */
 let lastPrefillPaper = null;
 
-/** 各分析 tab 最近一次生成的原始 markdown 文本（用于保存）。 */
-const savedResults = /** @type {Record<string, string>} */ ({
-  summarize: '',
-  explainConcepts: '',
-  critique: '',
-  translate: '',
-});
-
-/** Tab id → 中文短标签（用于文件名）。 */
-const TAB_LABEL = /** @type {Record<string, string>} */ ({
-  summarize: '总结',
-  explainConcepts: '概念解释',
-  critique: '质疑',
-  translate: '翻译',
-  chat: '对话',
-});
-
 // ---------- 存档功能接口 ----------
 
 /**
@@ -69,7 +57,7 @@ const TAB_LABEL = /** @type {Record<string, string>} */ ({
  * @returns {Record<string, string>}
  */
 export function getSavedResults() {
-  return { ...savedResults };
+  return { ...getState().savedResults };
 }
 
 /**
@@ -78,10 +66,14 @@ export function getSavedResults() {
  * @param {Record<string, string>} rs
  */
 export function setSavedResults(rs) {
+  const results = {};
   const tasks = /** @type {const} */ (['summarize', 'explainConcepts', 'critique', 'translate']);
   for (const t of tasks) {
-    if (typeof rs[t] === 'string') savedResults[t] = rs[t];
+    results[t] = typeof rs[t] === 'string' ? rs[t] : '';
+    const result = root?.querySelector(`[data-section="${t}"] [data-result]`);
+    if (result) renderMarkdown(result, results[t]);
   }
+  setState({ savedResults: results });
   for (const t of tasks) syncSaveButton(t);
 }
 
@@ -96,7 +88,7 @@ export function refreshAfterRestore() {
 
   // 切换到第一个有内容的 tab（优先分析 tab，其次对话）
   for (const t of tasks) {
-    if (savedResults[t]) {
+    if (getState().savedResults[t]) {
       setState({ ui: { ...getState().ui, activeTab: t } });
       return;
     }
@@ -106,220 +98,12 @@ export function refreshAfterRestore() {
   }
 }
 
-// ---------- 保存/下载工具 ----------
-
-/**
- * 生成合法的下载文件名（不含扩展名）。
- * @param {string} paperTitle 论文标题（可能含非法字符）
- * @param {string} tag 类型标签（如"总结""质疑""对话"）
- * @returns {string}
- */
-function makeFilename(paperTitle, tag) {
-  const safe = (paperTitle || '未命名论文').replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 80);
-  const date = new Date().toISOString().slice(0, 10);
-  return `${safe}_${tag}_${date}`;
-}
-
-/**
- * 触发浏览器直接下载（Blob 方式，不选路径）。
- * @param {string} content 文件内容
- * @param {string} filename 文件名
- * @param {string} [mimeType]
- */
-function downloadFile(content, filename, mimeType) {
-  const mime = mimeType || 'text/markdown;charset=utf-8';
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/**
- * 使用 File System Access API 保存到用户选择的路径。
- * 不可用时回退到直接下载。
- * @param {string} content
- * @param {string} filename
- * @param {string} mimeType
- * @returns {Promise<boolean>} 是否成功（用户取消返回 false）
- */
-async function saveViaFileSystemAPI(content, filename, mimeType) {
-  try {
-    if (!window.showSaveFilePicker) {
-      downloadFile(content, filename, mimeType);
-      return true;
-    }
-    const ext = filename.split('.').pop() || 'md';
-    const handle = await window.showSaveFilePicker({
-      suggestedName: filename,
-      types: [{
-        description: ext === 'pdf' ? 'PDF 文档' : 'Markdown 文档',
-        accept: ext === 'pdf'
-          ? { 'application/pdf': ['.pdf'] }
-          : { 'text/markdown': ['.md'] },
-      }],
-    });
-    const writable = await handle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    return true;
-  } catch (err) {
-    // AbortError = 用户点了取消
-    if (/** @type {DOMException} */ (err).name === 'AbortError') return false;
-    // 其他错误回退到直接下载
-    downloadFile(content, filename, mimeType);
-    return true;
-  }
-}
-
-/**
- * 构建 markdown → 完整 HTML 文档（供打印/PDF 使用）。
- * 复用 renderMarkdown 以得到正确的 KaTeX 渲染结果。
- * @param {string} markdownContent
- * @returns {string} 完整的 HTML 文档字符串
- */
-function buildPrintHtml(markdownContent) {
-  const temp = document.createElement('div');
-  renderMarkdown(temp, markdownContent || '');
-  const bodyHtml = temp.innerHTML;
-
-  // 收集当前页所有 <style>（含 KaTeX 字体/样式），保证打印窗口排版一致
-  const styles = Array.from(document.querySelectorAll('style'))
-    .map((s) => s.outerHTML)
-    .join('\n');
-
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <title>AI 阅读导出</title>
-  ${styles}
-  <style>
-    body {
-      max-width: 800px;
-      margin: 40px auto;
-      padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-        "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.8;
-      color: #1f2328;
-    }
-    @media print {
-      body { margin: 0; padding: 20px; }
-    }
-  </style>
-</head>
-<body>${bodyHtml}</body>
-</html>`;
-}
-
-/**
- * 执行实际下载。
- * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat'} task
- * @param {'md' | 'pdf'} format
- * @param {string} filename
- * @param {boolean} useFileSystemAPI 是否使用 File System Access API 选择路径
- * @returns {Promise<boolean>}
- */
-async function executeDownload(task, format, filename, useFileSystemAPI) {
-  // 获取 markdown 内容
-  let markdownContent;
-  if (task === 'chat') {
-    markdownContent = buildChatMarkdown();
-  } else {
-    markdownContent = buildAnalyzeMarkdown(
-      /** @type {'summarize' | 'explainConcepts' | 'critique' | 'translate'} */ (task),
-      savedResults[task] || '',
-    );
-  }
-
-  if (format === 'md') {
-    if (useFileSystemAPI) {
-      return await saveViaFileSystemAPI(markdownContent, filename, 'text/markdown;charset=utf-8');
-    }
-    downloadFile(markdownContent, filename, 'text/markdown;charset=utf-8');
-    return true;
-  }
-
-  // PDF：打开打印窗口（用户可在打印对话框中选择"另存为 PDF"并指定路径）
-  const html = buildPrintHtml(markdownContent);
-  const w = window.open('', '_blank');
-  if (!w) {
-    alert('弹窗被浏览器拦截，请允许本站弹窗后重试。');
-    return false;
-  }
-  w.document.write(html);
-  w.document.close();
-  // 等待资源加载完毕后触发打印
-  w.addEventListener('load', () => {
-    setTimeout(() => w.print(), 200);
-  });
-  // 兜底：document 可能已经 complete
-  if (w.document.readyState === 'complete') {
-    setTimeout(() => w.print(), 300);
-  }
-  return true;
-}
-
-/**
- * 构建分析 Tab 的 markdown 文件内容。
- * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate'} task
- * @param {string} rawText AI 原始输出
- * @returns {string}
- */
-function buildAnalyzeMarkdown(task, rawText) {
-  const { paper } = getState();
-  const title = paper?.meta?.title || paper?.name || '未命名论文';
-  const now = new Date().toLocaleString('zh-CN');
-  const tag = TAB_LABEL[task] || task;
-  return [
-    `# ${title}`,
-    '',
-    `> **${tag}**  |  生成时间：${now}`,
-    '',
-    '---',
-    '',
-    (rawText || '').trim(),
-  ].join('\n');
-}
-
-/**
- * 构建对话记录的 markdown 文件内容。
- * @returns {string}
- */
-function buildChatMarkdown() {
-  const { paper, messages } = getState();
-  const title = paper?.meta?.title || paper?.name || '未命名论文';
-  const now = new Date().toLocaleString('zh-CN');
-  const lines = [
-    `# ${title}`,
-    '',
-    `> **对话记录**  |  导出时间：${now}`,
-    '',
-    '---',
-    '',
-  ];
-  for (const m of messages) {
-    const roleLabel = m.role === 'user' ? '**🧑 你**' : '**🤖 AI**';
-    lines.push(`### ${roleLabel}`);
-    lines.push('');
-    lines.push((m.content || '').trim());
-    lines.push('');
-  }
-  return lines.join('\n');
-}
-
 /** 同步分析 Tab 保存按钮状态。 */
 function syncSaveButton(task) {
   if (!root) return;
   const btn = root.querySelector(`[data-action="save"][data-task="${task}"]`);
   if (btn instanceof HTMLButtonElement) {
-    btn.disabled = !savedResults[task] || getState().ui.busy;
+    btn.disabled = !getState().savedResults[task] || getState().ui.busy;
   }
 }
 
@@ -350,141 +134,6 @@ function syncChatStatus(status) {
 }
 
 // =========================================================
-// 下载选项对话框
-// =========================================================
-
-/** 关闭已存在的下载对话框。 */
-function closeDownloadDialog() {
-  document.querySelectorAll('.download-dialog-overlay').forEach((el) => el.remove());
-}
-
-/**
- * 弹出下载选项对话框。
- * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat'} task
- */
-function showDownloadDialog(task) {
-  closeDownloadDialog();
-
-  const tag = TAB_LABEL[task] || task;
-  const baseName = makeFilename(
-    getState().paper?.meta?.title || getState().paper?.name || '',
-    tag,
-  );
-
-  const overlay = document.createElement('div');
-  overlay.className = 'download-dialog-overlay';
-  overlay.innerHTML = `
-    <div class="download-dialog">
-      <div class="download-dialog__header">
-        <h3>保存「${escapeHtml(tag)}」</h3>
-        <button type="button" class="download-dialog__close"
-          data-action="dl-close">&times;</button>
-      </div>
-      <div class="download-dialog__body">
-        <label class="download-dialog__label">文件格式</label>
-        <div class="download-dialog__format">
-          <label class="download-dialog__radio">
-            <input type="radio" name="dl-format" value="md" checked>
-            <span class="download-dialog__radio-text">
-              <strong>Markdown (.md)</strong>
-              <small>纯文本格式，兼容性好，可再次编辑</small>
-            </span>
-          </label>
-          <label class="download-dialog__radio">
-            <input type="radio" name="dl-format" value="pdf">
-            <span class="download-dialog__radio-text">
-              <strong>PDF (.pdf)</strong>
-              <small>排版固定，适合打印和分享</small>
-            </span>
-          </label>
-        </div>
-        <label class="download-dialog__label" for="dl-filename">文件名</label>
-        <input id="dl-filename" type="text"
-          class="download-dialog__filename-input"
-          value="${escapeHtml(baseName)}.md" data-dl-filename>
-      </div>
-      <div class="download-dialog__actions">
-        <button type="button" class="ai-btn ai-btn--ghost"
-          data-action="dl-close">取消</button>
-        <button type="button" class="ai-btn ai-btn--ghost"
-          data-action="dl-direct">直接下载</button>
-        <button type="button" class="ai-btn ai-btn--primary"
-          data-action="dl-path">选择路径保存</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  // --- 事件绑定 ---
-  const close = () => closeDownloadDialog();
-  const filenameInput = /** @type {HTMLInputElement | null} */ (
-    overlay.querySelector('[data-dl-filename]')
-  );
-
-  // 关闭按钮 + 点击遮罩关闭
-  overlay.querySelectorAll('[data-action="dl-close"]').forEach((b) =>
-    b.addEventListener('click', close));
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
-  document.addEventListener('keydown', function onEsc(e) {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
-  });
-
-  // 直接下载
-  overlay.querySelector('[data-action="dl-direct"]')?.addEventListener('click', () => {
-    const format = /** @type {HTMLInputElement} */ (
-      overlay.querySelector('input[name="dl-format"]:checked')
-    ).value;
-    const fname = filenameInput?.value || `${baseName}.${format}`;
-    void executeDownload(task, /** @type {'md' | 'pdf'} */ (format), fname, false);
-    close();
-  });
-
-  // 选择路径保存
-  overlay.querySelector('[data-action="dl-path"]')?.addEventListener('click', async () => {
-    const format = /** @type {HTMLInputElement} */ (
-      overlay.querySelector('input[name="dl-format"]:checked')
-    ).value;
-    const fname = filenameInput?.value || `${baseName}.${format}`;
-    const ok = await executeDownload(task, /** @type {'md' | 'pdf'} */ (format), fname, true);
-    if (ok) close();
-  });
-
-  // 切换格式时同步扩展名
-  overlay.querySelectorAll('input[name="dl-format"]').forEach((r) => {
-    r.addEventListener('change', () => {
-      if (!filenameInput) return;
-      const fmt = /** @type {HTMLInputElement} */ (
-        overlay.querySelector('input[name="dl-format"]:checked')
-      ).value;
-      filenameInput.value = filenameInput.value.replace(/\.(md|pdf)$/, `.${fmt}`);
-    });
-  });
-
-  // 聚焦并全选文件名
-  if (filenameInput) {
-    filenameInput.focus();
-    filenameInput.select();
-  }
-}
-
-// ---------- escapeHtml ----------
-
-/**
- * @param {string} s
- * @returns {string}
- */
-function escapeHtml(s) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-// =========================================================
 // 初始化
 // =========================================================
 
@@ -508,9 +157,10 @@ export function initAiPane() {
       ${TABS.map(
         (t) => `
         <button type="button" class="ai-tab" role="tab"
-          data-tab="${t.id}" aria-selected="false">${t.label}</button>`,
+          id="tab-${t.id}" aria-controls="panel-${t.id}" data-tab="${t.id}" aria-selected="false">${t.label}</button>`,
       ).join('')}
     </div>
+    <div class="chat-status" data-chat-status role="status" aria-live="polite" hidden></div>
     <div class="ai-body">
       ${renderAnalyzeTab('summarize', '总结', '生成结构化的全文总结（一句话/背景/方法/结果/局限）。')}
       ${renderAnalyzeTab('explainConcepts', '解释概念', '抽取并解释论文中的关键概念（含官方定义 + 通俗解释）。')}
@@ -527,12 +177,40 @@ export function initAiPane() {
   bindChat();
   bindRelated();
 
+  let previousPaper = getState().paper;
+  subscribe((s) => {
+    if (s.paper === previousPaper) return;
+    previousPaper = s.paper;
+    paneVersion++;
+    abortCurrent();
+    currentController = null;
+    currentRenderer?.finalize();
+    currentRenderer = null;
+    abortBadgePass();
+    const relatedStatus = root.querySelector('[data-related-status]');
+    if (relatedStatus) relatedStatus.hidden = true;
+    const searchButton = root.querySelector('[data-action="related-search"]');
+    if (searchButton) searchButton.textContent = '检索';
+    setSavedResults({});
+    renderChatList();
+    root.querySelectorAll('[data-error]').forEach(hideError);
+    setState({ ui: { ...getState().ui, busy: false, quickAsk: null } });
+  });
+
   // 订阅 store：tab 高亮 + busy 态同步 + 追问联动 + 保存按钮状态
   subscribe((s) => {
     syncTabs(s.ui.activeTab);
     syncBusy(s.ui.busy);
     syncChatSaveButton();
     syncChatStatus(s.chatStatus);
+    root.querySelectorAll('[data-result-status]').forEach((element) => {
+      const task = element.closest('[data-section]').dataset.section;
+      const status = s.resultStatuses[task];
+      const progress = s.segmentedTask?.task === task ? s.segmentedTask : null;
+      const labels = { generating: '生成中', complete: '已完成', interrupted: '已停止，内容未完成', failed: '生成失败，内容未完成' };
+      element.hidden = !status;
+      element.textContent = (labels[status] || '') + (progress ? ` · 分段进度 ${progress.nextIndex}/${progress.total}` : '');
+    });
     // 中栏追问联动：textPane 设置 quickAsk + 切到 chat tab
     if (s.ui.quickAsk && s.ui.activeTab === 'chat' && !s.ui.busy) {
       const text = s.ui.quickAsk;
@@ -571,11 +249,13 @@ function renderAnalyzeTab(id, label, desc) {
             data-action="generate" data-task="${id}">生成</button>
           <button type="button" class="ai-btn ai-btn--ghost"
             data-action="save" data-task="${id}" disabled>保存</button>
+          <button type="button" class="ai-btn ai-btn--ghost" data-action="segmented" data-task="${id}">分段处理…</button>
           <button type="button" class="ai-btn ai-btn--ghost"
             data-action="stop" hidden>停止</button>
         </div>
       </div>
       <div class="ai-section__desc">${desc}</div>
+      <div class="chat-status" data-result-status role="status" hidden></div>
       <div class="ai-error" data-error hidden></div>
       <div class="ai-result" data-result>
         <div class="ai-placeholder">点击"生成"开始（结果会流式显示在这里）。</div>
@@ -589,7 +269,6 @@ function renderChatTab() {
     <section class="ai-pane__section ai-pane__section--chat" data-section="chat" hidden>
       <div class="ai-error" data-error hidden></div>
       <div class="chat-list" data-chat-list></div>
-      <div class="chat-status" data-chat-status hidden></div>
       <div class="chat-composer">
         <textarea class="chat-input" data-chat-input rows="2"
           placeholder="基于当前论文提问…（Enter 发送 · Shift+Enter 换行）"></textarea>
@@ -613,6 +292,20 @@ function renderChatTab() {
 function bindTabs() {
   if (!root) return;
   root.querySelectorAll('.ai-tab').forEach((btn) => {
+    btn.addEventListener('keydown', (event) => {
+      const tabs = [...root.querySelectorAll('.ai-tab')];
+      const index = tabs.indexOf(btn);
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = tabs.length - 1;
+      else return;
+      event.preventDefault();
+      if (getState().ui.busy) return;
+      tabs[next].click();
+      tabs[next].focus();
+    });
     btn.addEventListener('click', () => {
       const el = /** @type {HTMLElement} */ (btn);
       const id = el.dataset.tab;
@@ -634,10 +327,14 @@ function syncTabs(activeTab) {
     const el = /** @type {HTMLElement} */ (btn);
     const active = el.dataset.tab === activeTab;
     el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
     el.classList.toggle('ai-tab--active', active);
   });
   root.querySelectorAll('.ai-pane__section').forEach((sec) => {
     const el = /** @type {HTMLElement} */ (sec);
+    el.id = `panel-${el.dataset.section}`;
+    el.setAttribute('role', 'tabpanel');
+    el.setAttribute('aria-labelledby', `tab-${el.dataset.section}`);
     el.hidden = el.dataset.section !== activeTab;
   });
 }
@@ -651,7 +348,7 @@ function syncTabs(activeTab) {
  */
 function syncBusy(busy) {
   if (!root) return;
-  root.querySelectorAll('[data-action="generate"]').forEach((btn) => {
+  root.querySelectorAll('[data-action="generate"], [data-action="segmented"]').forEach((btn) => {
     /** @type {HTMLButtonElement} */ (btn).disabled = busy;
   });
   root.querySelectorAll('[data-action="send"]').forEach((btn) => {
@@ -663,7 +360,7 @@ function syncBusy(busy) {
   root.querySelectorAll('[data-action="save"]').forEach((btn) => {
     const el = /** @type {HTMLElement} */ (btn);
     /** @type {HTMLButtonElement} */ (btn).disabled =
-      busy || !savedResults[el.dataset.task || ''];
+      busy || !getState().savedResults[el.dataset.task || ''];
   });
   root.querySelectorAll('[data-action="save-chat"]').forEach((btn) => {
     /** @type {HTMLButtonElement} */ (btn).disabled =
@@ -680,6 +377,13 @@ function syncBusy(busy) {
 
 function bindAnalyzeButtons() {
   if (!root) return;
+  root.querySelectorAll('[data-action="segmented"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const task = button.dataset.task;
+      const error = root.querySelector(`[data-section="${task}"] [data-error]`);
+      showSegmentedDialog(task, () => void runAnalyze(task, true), (err) => showError(error, describeErr(err)));
+    });
+  });
   root.querySelectorAll('[data-action="generate"]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const el = /** @type {HTMLElement} */ (e.currentTarget);
@@ -698,7 +402,7 @@ function bindAnalyzeButtons() {
     btn.addEventListener('click', (e) => {
       const el = /** @type {HTMLElement} */ (e.currentTarget);
       const task = el.dataset.task;
-      if (!task || !savedResults[task]) return;
+      if (!task || !getState().savedResults[task]) return;
       showDownloadDialog(
         /** @type {'summarize' | 'explainConcepts' | 'critique' | 'translate'} */ (task),
       );
@@ -714,7 +418,7 @@ function bindAnalyzeButtons() {
 /**
  * @param {'summarize' | 'explainConcepts' | 'critique' | 'translate'} task
  */
-async function runAnalyze(task) {
+async function runAnalyze(task, segmented = false) {
   if (!root) return;
   if (getState().ui.busy) return;
   const section = /** @type {HTMLElement} */ (
@@ -732,12 +436,15 @@ async function runAnalyze(task) {
   hideError(errorEl);
   resultEl.innerHTML = '<div class="ai-placeholder">生成中…</div>';
 
+  const version = paneVersion;
   currentController = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
 
-  const renderer = createStreamingRenderer(resultEl, { intervalMs: 80 });
+  saveAnalysis(task, '', 'generating');
+  const renderer = currentRenderer = createStreamingRenderer(resultEl, { intervalMs: 80,
+    onUpdate: (text) => { if (version === paneVersion) saveAnalysis(task, text, 'generating'); } });
   try {
-    const iterable =
+    const iterable = segmented ? client.runSegmented(task, currentController.signal) :
       task === 'summarize'
         ? client.summarize(currentController.signal)
         : task === 'explainConcepts'
@@ -748,15 +455,20 @@ async function runAnalyze(task) {
               ? client.translate(currentController.signal)
               : client.critique(currentController.signal); // 理论不可达兜底
     for await (const chunk of iterable) {
+      if (version !== paneVersion) return;
       renderer.push(chunk);
     }
+    if (version !== paneVersion) return;
     renderer.finalize();
-    savedResults[task] = renderer.getText();
+    saveAnalysis(task, renderer.getText(), 'complete');
   } catch (err) {
+    if (version !== paneVersion) return;
     renderer.finalize();
-    savedResults[task] = renderer.getText();
+    saveAnalysis(task, renderer.getText(), err.name === 'AbortError' ? 'interrupted' : 'failed');
     showError(errorEl, describeErr(err));
   } finally {
+    if (version !== paneVersion) return;
+    currentRenderer = null;
     syncSaveButton(task);
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
@@ -803,19 +515,30 @@ async function sendChat() {
 
   const assistantEl = appendChatBubble('assistant', '');
 
+  const version = paneVersion;
   currentController = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
 
-  const renderer = createStreamingRenderer(assistantEl, { intervalMs: 80 });
+  const renderer = currentRenderer = createStreamingRenderer(assistantEl, { intervalMs: 80 });
   try {
     for await (const chunk of client.chat(text, currentController.signal)) {
+      if (version !== paneVersion) return;
       renderer.push(chunk);
     }
+    if (version !== paneVersion) return;
     renderer.finalize();
   } catch (err) {
+    if (version !== paneVersion) return;
     renderer.finalize();
+    if (renderer.getText()) appendMessageStatus(assistantEl, { status: err.name === 'AbortError' ? 'interrupted' : 'failed' });
+    if (!renderer.getText()) {
+      if (!input.value) input.value = text;
+      renderChatList();
+    }
     if (errorEl) showError(errorEl, describeErr(err));
   } finally {
+    if (version !== paneVersion) return;
+    currentRenderer = null;
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
     syncChatSaveButton();
@@ -836,6 +559,7 @@ function renderChatList() {
     } else {
       bubble.textContent = m.content || '';
     }
+    appendMessageStatus(bubble, m);
     list.appendChild(bubble);
   }
   scrollChatToBottom();
@@ -935,6 +659,7 @@ async function runRelatedSearch() {
     statusEl.hidden = false;
   }
 
+  const version = paneVersion;
   currentController = new AbortController();
   badgeAbort = new AbortController();
   setState({ ui: { ...getState().ui, busy: true } });
@@ -942,6 +667,7 @@ async function runRelatedSearch() {
 
   try {
     const results = await searchRelated(query, { signal: currentController.signal });
+    if (version !== paneVersion) return;
     if (resultsEl) renderRelatedResults(resultsEl, results);
     // 后台跑代码徽标（不阻塞主结果）
     void computeBadges(results, {
@@ -952,9 +678,12 @@ async function runRelatedSearch() {
       console.warn('[related] 代码徽标校验中断：', err);
     });
   } catch (err) {
+    if (version !== paneVersion) return;
     if (resultsEl) resultsEl.innerHTML = '';
     if (errorEl) showError(errorEl, describeErr(err));
   } finally {
+    if (version !== paneVersion) return;
+    currentRenderer = null;
     setState({ ui: { ...getState().ui, busy: false } });
     currentController = null;
     if (statusEl) statusEl.hidden = true;
@@ -1070,7 +799,7 @@ function abortBadgePass() {
  */
 function syncRelatedPrefill(paper) {
   if (!root) return;
-  const name = paper?.name ?? null;
+  const name = paper;
   if (name === lastPrefillPaper) return;
   lastPrefillPaper = name;
 
@@ -1125,4 +854,25 @@ function hideError(el) {
   if (!el) return;
   el.textContent = '';
   el.hidden = true;
+}
+
+/** Return analysis completion state for archive compatibility. */
+export function getSavedResultStatuses() { return { ...getState().resultStatuses }; }
+
+/** Restore completion state and update its visible labels. */
+export function setSavedResultStatuses(statuses) {
+  setState({ resultStatuses: { ...statuses } });
+}
+
+function saveAnalysis(task, text, status) {
+  setState({ savedResults: { ...getState().savedResults, [task]: text },
+    resultStatuses: { ...getState().resultStatuses, [task]: status } });
+}
+
+function appendMessageStatus(element, message) {
+  if (!message.status || message.status === 'complete') return;
+  const label = document.createElement('div');
+  label.className = 'chat-status';
+  label.textContent = message.status === 'generating' ? '生成中' : '未完成：可保留、导出或重新提问';
+  element.append(label);
 }

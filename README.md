@@ -6,6 +6,10 @@
 
 ## 快速开始
 
+需要 Node.js 22.22.2+（22 LTS）、24.15.0+（24 LTS）或 26+。
+
+验证命令：`npm test`（回归测试）、`npm run build`（单 HTML 构建）、`npm audit`（依赖漏洞）。
+
 ```bash
 # 1. 安装依赖（仅首次）
 npm install
@@ -44,7 +48,15 @@ npm run preview
 
 ## 技术栈
 
-- **构建**：Vite 5 + `vite-plugin-singlefile` → 单 HTML
+免密钥的兼容服务可将 API Key 留空；设置中可以明确清除已保存的密钥。密钥仅存当前浏览器，调用时发送到你填写的服务。
+
+顶栏“打开 PDF”可随时切换论文。AI 标签支持方向键、Home 和 End；设置和存档支持 Escape 关闭并恢复焦点。
+
+PDF 同时最多渲染两页，单页最多四百万像素；缓存超过八页时释放旧离屏画布，可见页面保留。调整栏宽会重新渲染。
+
+流式回复在底部时跟随滚动，向上阅读时保持位置；公式识别保留代码块内容。断流、损坏响应和模型截断会明确提示。
+
+- **构建**：Vite 7 + `vite-plugin-singlefile` → 单 HTML
 - **PDF**：pdf.js（`?worker&inline` 全内联）
 - **Markdown**：marked（含 KaTeX 数学扩展）
 - **公式**：KaTeX（仅 AI 输出栏，字体惰性内联）
@@ -56,6 +68,21 @@ npm run preview
 
 - **CORS**：部分自建 AI 服务（vLLM / Ollama）默认不允许浏览器跨域请求，需在服务端配 CORS 头或使用代理。
 - **`file://` 协议**：双击 `dist/index.html` 时，浏览器可能限制 `file://` 下的 fetch 请求。建议用 `npm run preview` 做本地静态服务。
-- **扫描件 PDF**：无文本层的纯扫描 PDF 无法提取文本，左栏仍可渲染原版，但 AI 功能不可用。
-- **超长论文**：论文全文一次性注入 AI 上下文，若模型上下文窗口不够大会截断。建议使用 32k+ token 上下文的模型。
+- **扫描件 PDF**：无文本层的纯扫描 PDF 需要在中栏使用 AI 视觉识别，并配置支持图片输入的识别模型。
+- **超长论文**：对话会检索相关段落并压缩历史；全文分析仍受字符预算和模型上下文窗口限制，可能截断。
 - **`standardFontDataUrl` 警告**：pdf.js 对极少数内嵌字体（CJK）渲染 canvas 时可能缺字形，属于 pdf.js 已知问题，拉丁论文不受影响。
+
+## Context budget
+
+The reading model settings include an estimated input token budget (default 24,000). Keep it below the model capacity to reserve output space. Chat selects relevant paper chunks; full-paper tasks reject oversized input rather than silently truncate. The AI status line reports current coverage. See [CONTEXT.md](./CONTEXT.md) for the estimation method and limitations.
+
+## Resumable reading
+
+- Archives and automatic recovery retain extracted text, page metadata, partial results and segmented progress. The original PDF binary is not stored. Reopen the same fingerprint-matching PDF to restore its visual preview without discarding chat.
+- Incomplete answers are labelled and can be archived or exported. No output token cap is sent to the model.
+- Source markers such as `[p1-c1]` link to existing page chunks. Identifier validation does not verify the truth of a model's claim.
+- Use the explicit segmented-processing button to review estimated model calls before starting. Completed sections survive cancellation; changing model settings requires a new plan. Very large section notes can require additional reduction calls.
+- OCR reports failed pages and supports an explicit retry of failed pages only.
+- Extraction supports clear two-column horizontal prose. Rotated text, tables and complex layouts still require checking against the PDF.
+
+Tests: `npm test` runs module/integration checks. `npx playwright install chromium` then `npm run test:e2e` runs real-browser checks with generated PDF fixtures and mocked model responses. On a machine with Chrome installed, use `PLAYWRIGHT_CHROME=1 npm run test:e2e`.

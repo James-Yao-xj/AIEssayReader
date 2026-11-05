@@ -18,7 +18,8 @@
 // src/pdf/extract.js
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline';
-pdfjsLib.GlobalWorkerOptions.workerPort = new PdfjsWorker();
+export const pdfWorker = new pdfjsLib.PDFWorker({ port: new PdfjsWorker() });
+// Pass { data, worker: pdfWorker } to every getDocument call.
 export { pdfjsLib };
 ```
 
@@ -644,3 +645,42 @@ container.scrollTop = max(0, holderTopInScroll + f * newH - viewportY);
 - ❌ 用 CSS transform 缩放 canvas（不撑布局 → 无滚动条、被裁切；位图不足时发虚）。
 - ❌ 缩放即清空/全量重渲染所有页（性能爆炸 + 锚点 offsetTop 失稳）。
 - ❌ 把 wheel 监听绑 `window`/`document`（影响其它栏）；或缩放逻辑泄漏到 main.js（违反单向依赖）。
+
+
+## Reliability audit contracts
+
+- Treat AI Markdown and imported archive strings as untrusted HTML. Sanitize after Markdown and math rendering.
+- Every document load and asynchronous AI task must check its document identity before state or DOM writes. Cancel obsolete work and clear cached results on replacement.
+- Commit IndexedDB writes only on transaction completion, not request success. Validate imported archive schemas before persistence.
+- Flush SSE decoder and trailing data at EOF; surface API error events and release the reader on exit.
+- Run `npm test`, `npm run build`, and `npm audit` for changes across these boundaries.
+
+
+## Reader optimization contracts
+
+- Explicitly share a PDFWorker between document tasks. A document transport must not own the shared worker.
+- Limit raster concurrency to two jobs and each canvas to four million pixels. Evict old offscreen rasters beyond eight cached pages.
+- Parse math at Markdown token boundaries, never by rewriting code spans or fences. Measure scroll-follow state before replacing content.
+- Modal dialogs keep keyboard focus and restore the trigger. Tabs use roving focus and Arrow/Home/End navigation.
+- API keys are optional for HTTP(S) endpoints. Omit empty Authorization headers. Streams must signal completion and reject malformed or empty data.
+
+## Current context contract (supersedes earlier character-budget examples)
+
+- `planContext` is the source of truth for request admission and current coverage. It is pure; legacy `assemble` wraps it.
+- All text tasks use the configured estimated input-token budget with a ten percent reserve. Do not describe this heuristic as model-exact token counting.
+- Full-paper tasks reject oversized inputs before sending, rather than truncate content or silently run multiple paid requests.
+- Chat reserves the complete current question, excludes successfully summarized history, and fits history and whole paper chunks in the remaining budget.
+- Summary requests and stored summaries are bounded. Advance the exclusive summary index only for successfully compressed complete pairs.
+- Status must report current planned paper/history coverage and omissions, not cumulative retrieval indices.
+- The normative details are in `CONTEXT.md`; update docs and regression tests when these contracts change.
+
+
+## Resumable workflow contracts
+
+- Store analysis text and completion states in the shared store so UI, export and snapshots use the same truth. Incomplete replies remain visible but are excluded from model evidence.
+- Snapshot before queued writes; startup restore must also guard pending document loads. Recovery never starts model requests.
+- Persist segmented checkpoint counts only when completed output arrays match those counts. Never store API keys in checkpoint identities.
+- Explicitly review estimated multi-call work before starting. Preserve completed pieces across interruption.
+- Preserve paper fingerprints for binary reattachment; a matching PDF must not clear history.
+- Streaming rendering caches stable blocks and resolves late Markdown references in one final pass. Never cap answer output to solve rendering cost.
+- Run generated real-PDF browser tests in addition to mocked module tests. Rotated/table layouts are not covered by the prose ordering heuristic.

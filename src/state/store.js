@@ -12,10 +12,13 @@
  * @typedef {{
  *   role: 'user' | 'assistant',
  *   content: string,
+ *   status?: 'generating' | 'complete' | 'interrupted' | 'failed',
+ *   id?: string,
  * }} ChatMessage
  *
  * @typedef {{
  *   name: string,
+ *   fingerprint?: string,
  *   meta: { title?: string, authors?: string[], nPages: number },
  *   fullText: string,
  *   pages: Array<{ pageNum: number, text: string }>,
@@ -25,9 +28,13 @@
  *   paper: Paper | null,
  *   settings: import('../config/defaults.js').Settings,
  *   messages: ChatMessage[],
+ *   savedResults: Record<string, string>,
+ *   resultStatuses: Record<string, 'generating' | 'complete' | 'interrupted' | 'failed'>,
+ *   contextEvidence: Array<{id: string, pageNum: number, text: string}>,
+ *   segmentedTask: Object | null,
  *   conversationSummary: null | { text: string, summarizedUpTo: number },
-  retrievedChunkIndices: number[],
-  chatStatus: null | { text: string },
+ *   retrievedChunkIndices: number[],
+ *   chatStatus: null | { text: string },
  *   ui: { activeTab: 'summarize' | 'explainConcepts' | 'critique' | 'translate' | 'chat', busy: boolean, quickAsk: string | null },
  * }} State
  */
@@ -35,6 +42,10 @@
 /** @type {State} */
 let state = {
   paper: null,
+  savedResults: {},
+  resultStatuses: {},
+  contextEvidence: [],
+  segmentedTask: null,
   settings: {
     recognition: {
       baseUrl: '',

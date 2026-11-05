@@ -20,13 +20,14 @@
 
 import './styles.css';
 
+import { initAutosave } from './archive/autosave.js';
 import { extractText } from './pdf/extract.js';
 import { renderPdf } from './pdf/render.js';
 import { getState, setState, subscribe } from './state/store.js';
 import { loadSettings } from './config/storage.js';
 import { initSettings, openSettings } from './ui/settings.js';
 import { initAiPane } from './ui/aiPane.js';
-import { initTextPane, renderText, renderVisionResult, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
+import { initTextPane, resetTextPane, renderText, renderVisionResult, focusTextPage, setVisionHandler, setVisionAbort, setVisionProgress, hideVisionProgress } from './ui/textPane.js';
 import { initPaneResize } from './ui/paneResize.js';
 import { initPaneCollapse } from './ui/paneCollapse.js';
 import { initArchiveButton } from './ui/archiveDialog.js';
@@ -70,6 +71,11 @@ const keyHint = /** @type {HTMLElement | null} */ (
  * @type {{ cleanup: () => void, setZoom: (z:number) => void, getZoom: () => number } | null}
  */
 let currentPdfHandle = null;
+// Each load owns its asynchronous results.
+let documentVersion = 0;
+let activeLoadAbort = null;
+let localPaperUpdate = false;
+let lastVisionResult = null;
 /** @type {AbortController | null} */
 let activeVisionAbort = null;
 
@@ -87,6 +93,7 @@ let statusTimer = 0;
  * @param {number} [duration] 毫秒，0 表示不自动隐藏
  */
 function showStatus(kind, msg, duration = 3000) {
+  clearTimeout(statusTimer);
   statusBar.classList.remove(
     'status-bar--error',
     'status-bar--success',
@@ -104,6 +111,7 @@ function showStatus(kind, msg, duration = 3000) {
 }
 
 function hideStatus() {
+  clearTimeout(statusTimer);
   statusBar.hidden = true;
 }
 
@@ -115,7 +123,7 @@ function hideStatus() {
  * 处理一个 PDF 文件：并行 extract + render，渲染到左/中栏。
  * @param {File} file
  */
-async function loadPdf(file) {
+export async function loadPdf(file) {
   // 兜底：确保拖拽遮罩已隐藏（dragCounter 可能不同步）
   dropzone.hidden = true;
   dragCounter = 0;
@@ -128,86 +136,69 @@ async function loadPdf(file) {
     return;
   }
 
-  // 清理上一个 PDF（含正在进行的 AI 视觉识别）
-  if (currentPdfHandle) {
-    try {
-      currentPdfHandle.cleanup();
-    } catch {
-      /* ignore */
-    }
-    currentPdfHandle = null;
-  }
-  // 如果 AI 视觉识别正在运行，取消它（避免旧结果覆盖新 PDF）
-  if (activeVisionAbort) {
-    activeVisionAbort.abort();
-    activeVisionAbort = null;
-  }
-  // 清空中栏
-  textScroll.innerHTML = '';
-
-  // 切换空态/内容显示
-  setPaneEmpty(panePdf, false);
-  setPaneEmpty(paneText, false);
-  pdfScroll.hidden = false;
-  textScroll.hidden = false;
-
+  const version = ++documentVersion;
+  activeLoadAbort?.abort();
+  const controller = activeLoadAbort = new AbortController();
+  activeVisionAbort?.abort();
+  activeVisionAbort = null;
+  lastVisionResult = null;
+  currentPdfHandle?.cleanup();
+  currentPdfHandle = null;
+  setVisionHandler(null);
   showStatus('info', `加载中：${file.name} …`, 0);
+  setPaneEmpty(panePdf, false);
+  pdfScroll.hidden = false;
 
-  // 并行：extract（中栏文本） + render（左栏原版）
-  // 失败互不致命：哪一边失败就单独报错，另一边仍可工作。
-  /** @type {Promise<any>[]} */
-  const tasks = [];
-  tasks.push(
-    renderPdf(file, pdfScroll)
-      .then((handle) => {
-        currentPdfHandle = handle;
-        showStatus(
-          'info',
-          `渲染中：共 ${handle.totalPages} 页（滚动加载更多）`,
-          2500,
-        );
-      })
-      .catch((err) => {
-        console.error('[pdf] render 失败：', err);
-        showStatus('error', `PDF 渲染失败：${describeErr(err)}`);
-      }),
-  );
-  tasks.push(
-    extractText(file)
-      .then((result) => {
-        renderTextToMiddle(result);
-        // 写入 store.paper，供 AI 层（client.js → context.js）使用
-        setState({
-          paper: {
-            name: file.name,
-            meta: result.meta || { nPages: result.pages?.length || 0 },
-            fullText: result.fullText,
-            pages: result.pages || [],
-          },
-          // 新论文加载：清空旧论文的对话状态
-          messages: [],
-          conversationSummary: null,
-          retrievedChunkIndices: [],
-          chatStatus: null,
-        });
-        // 注册 AI 视觉识别按钮回调
-        setupVisionHandler(file);
-        const meta = result.meta || {};
-        const titlePart = meta.title ? `《${meta.title}》` : file.name;
-        hideStatus();
-        showStatus(
-          'success',
-          `已加载：${titlePart}（${meta.nPages ?? '?'} 页，${result.fullText.length} 字符）`,
-          3500,
-        );
-      })
-      .catch((err) => {
-        console.error('[pdf] extract 失败：', err);
-        showStatus('error', `文本提取失败：${describeErr(err)}`);
-      }),
-  );
-
-  await Promise.allSettled(tasks);
+  let extractionFailed = false;
+  const rendering = renderPdf(file, pdfScroll, () => version === documentVersion)
+    .then((handle) => {
+      if (version !== documentVersion || extractionFailed) { handle.cleanup(); return; }
+      currentPdfHandle = handle;
+    }).catch((error) => {
+      if (version === documentVersion) showStatus('error', `PDF 渲染失败：${describeErr(error)}`);
+    });
+  try {
+    const result = await extractText(file, { signal: controller.signal });
+    if (version !== documentVersion) return;
+    const previous = getState().paper;
+    const reattached = previous?.fingerprint && previous.fingerprint === result.fingerprint;
+    if (reattached) {
+      // Retain the archived text and object identity, including OCR text.
+      renderText(previous);
+      if (previous.pages.some((page) => page.error)) {
+        lastVisionResult = previous;
+        renderVisionResult(previous);
+      }
+      showStatus('success', '原 PDF 已重新关联，对话和分析结果已保留。', 5000);
+    } else {
+      resetTextPane();
+      const paper = { name: file.name, ...result };
+      localPaperUpdate = true;
+      try {
+        setState({ paper, messages: [], conversationSummary: null, retrievedChunkIndices: [], chatStatus: null,
+          savedResults: {}, resultStatuses: {}, contextEvidence: [], segmentedTask: null });
+      } finally { localPaperUpdate = false; }
+      renderText(result);
+      showStatus('success', previous
+        ? 'PDF 与当前会话不匹配，已打开为新论文并清空旧对话和分析。'
+        : `已加载：${file.name}（${result.meta.nPages} 页）`, 5000);
+    }
+    setPaneEmpty(paneText, false);
+    textScroll.hidden = false;
+    setupVisionHandler(file);
+  } catch (error) {
+    if (version === documentVersion && error.name !== 'AbortError') {
+      extractionFailed = true;
+      currentPdfHandle?.cleanup();
+      currentPdfHandle = null;
+      pdfScroll.replaceChildren();
+      setPaneEmpty(panePdf, true);
+      showStatus('error', `文本提取失败：${describeErr(error)}`, 6000);
+    }
+  } finally {
+    await rendering;
+    if (activeLoadAbort === controller) activeLoadAbort = null;
+  }
 }
 
 /**
@@ -224,7 +215,7 @@ function renderTextToMiddle(result) {
  * @param {File} file
  */
 function setupVisionHandler(file) {
-  setVisionHandler(async () => {
+  setVisionHandler(async (retryFailedOnly = false) => {
     // 防御：同一时刻只有一个 vision 任务
     if (activeVisionAbort) {
       activeVisionAbort.abort();
@@ -238,28 +229,32 @@ function setupVisionHandler(file) {
 
       const result = await extractWithVision(file, {
         signal: ctrl.signal,
+        previousResult: lastVisionResult,
+        retryFailedOnly,
         onProgress: (current, total) => {
+          if (ctrl.signal.aborted) return;
           setVisionProgress(current, total);
           showStatus('info', `AI 识别中 ${current}/${total} 页…`, 0);
         },
       });
 
+      if (ctrl.signal.aborted) return;
+      lastVisionResult = result;
       // 更新中栏显示（切换到 AI 模式）
       renderVisionResult(result);
-      // 更新 store.paper（AI 分析将使用新结果）
-      setState({
-        paper: {
-          name: file.name,
-          meta: result.meta || { nPages: result.pages?.length || 0 },
-          fullText: result.fullText,
-          pages: result.pages || [],
-        },
-        // 新论文加载：清空旧论文的对话状态
-        messages: [],
-        conversationSummary: null,
-        retrievedChunkIndices: [],
-        chatStatus: null,
-      });
+      // Keep native text if all pages fail. The failed-page cache still permits retry.
+      if (!result.fullText.trim()) {
+        showStatus('error', 'AI 未识别出文本；已保留原文，可点击“重试失败页”。', 6000);
+        return;
+      }
+      const original = getState().paper;
+      localPaperUpdate = true;
+      try {
+        setState({ paper: { name: file.name, ...result, meta: { ...original?.meta, ...result.meta },
+          fingerprint: original?.fingerprint || result.fingerprint },
+          messages: [], conversationSummary: null, retrievedChunkIndices: [], chatStatus: null,
+          savedResults: {}, resultStatuses: {}, contextEvidence: [], segmentedTask: null });
+      } finally { localPaperUpdate = false; }
 
       const meta = result.meta || {};
       const titlePart = meta.title ? `《${meta.title}》` : file.name;
@@ -270,7 +265,12 @@ function setupVisionHandler(file) {
         5000,
       );
     } catch (err) {
+      if (activeVisionAbort !== ctrl) return;
       hideVisionProgress();
+      if (err.partialResult) {
+        lastVisionResult = err.partialResult;
+        renderVisionResult(err.partialResult);
+      }
       if (err instanceof Error && err.name === 'AbortError') {
         showStatus('info', 'AI 识别已取消', 3000);
       } else {
@@ -394,6 +394,8 @@ function openFilePicker() {
   input.click();
 }
 
+document.getElementById('btn-open-pdf')?.addEventListener('click', openFilePicker);
+
 // 让左栏 PDF 空态区域点击也能选文件（轻量引导）
 panePdf.addEventListener('click', (e) => {
   // 标题栏（含最小化按钮）交互不触发选文件；最小化态交给恢复逻辑
@@ -485,7 +487,7 @@ function syncKeyHint(settings) {
   const hasKey = hasRecKey || hasReadKey;
   keyHint.hidden = hasKey;
   if (!hasKey) {
-    keyHint.textContent = '未配置 API Key';
+    keyHint.textContent = 'API Key 未设置（免密服务可使用）';
     keyHint.style.cursor = 'pointer';
     keyHint.title = '点击打开设置';
     // 点徽标也能打开设置（更醒目的引导）
@@ -515,3 +517,44 @@ console.info(
   '[app] AI 论文阅读插件已就绪。' +
     '拖入 PDF 或按 Ctrl/Cmd+O 打开；右上角"设置"填 Base URL/API Key。',
 );
+
+// External paper replacements are archive or autosave restores.
+let displayedPaper = getState().paper;
+subscribe((state) => {
+  if (state.paper === displayedPaper) return;
+  displayedPaper = state.paper;
+  if (localPaperUpdate) return;
+  documentVersion++;
+  activeLoadAbort?.abort();
+  activeLoadAbort = null;
+  activeVisionAbort?.abort();
+  activeVisionAbort = null;
+  lastVisionResult = null;
+  currentPdfHandle?.cleanup();
+  currentPdfHandle = null;
+  pdfScroll.replaceChildren();
+  textScroll.replaceChildren();
+  resetTextPane();
+  setPaneEmpty(panePdf, true);
+  setPaneEmpty(paneText, !state.paper?.pages?.length);
+  if (state.paper?.pages?.length) {
+    textScroll.hidden = false;
+    renderText(state.paper);
+  }
+  hideStatus();
+});
+
+window.addEventListener('paper-citation', (event) => {
+  const { pageNum } = event.detail || {};
+  if (!Number.isInteger(pageNum) || pageNum < 1) return;
+  const pdfPage = pdfScroll.querySelector(`[data-page-num="${pageNum}"]`);
+  pdfPage?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  focusTextPage(pageNum);
+});
+
+subscribe((state) => {
+  if (state.autosaveStatus?.status === 'failed') showStatus('error', state.autosaveStatus.text, 8000);
+});
+const startupDocumentVersion = documentVersion;
+void initAutosave({ canRestore: () => documentVersion === startupDocumentVersion, onError: (error) => showStatus('error', `自动保存失败：${describeErr(error)}`, 8000) })
+  .catch((error) => showStatus('error', `会话恢复失败：${describeErr(error)}`, 8000));

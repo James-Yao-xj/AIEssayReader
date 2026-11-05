@@ -17,18 +17,20 @@
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#reader">跳到阅读区域</a>
     <!-- 顶部条：标题 + 未填 Key 提示 + 设置按钮 -->
     <header class="app-header">
       <h1 class="app-title">AI 论文阅读插件</h1>
       <div class="app-header__hint">拖入 PDF 即可开始 · 设置好后用总结/概念/质疑/对话</div>
-      <span class="app-header__key-hint" id="key-hint" hidden>未配置 API Key</span>
+      <button type="button" class="app-header__key-hint" id="key-hint" hidden>未配置 API Key</button>
+      <button class="app-header__btn" id="btn-open-pdf" type="button">打开 PDF</button>
       <button class="app-header__btn app-header__btn--theme" id="btn-theme" type="button" title="切换白天/黑夜模式" aria-label="切换白天/黑夜模式">☀️</button>
       <button class="app-header__btn" id="btn-archive" type="button" title="存档管理" aria-label="存档管理">💾 存档</button>
       <button class="app-header__btn" id="btn-settings" type="button" title="打开设置" aria-label="打开设置">⚙ 设置</button>
     </header>
 
     <!-- 三栏布局：左 PDF 原版 / 中 提取文本 / 右 AI 面板 -->
-    <main class="app-main">
+    <main class="app-main" id="reader" tabindex="-1">
       <!-- 左栏：PDF 原版渲染 -->
       <section class="pane pane--pdf" id="pane-pdf" aria-label="PDF 原版">
         <div class="pane__header">
@@ -54,7 +56,7 @@
         </div>
         <div class="pane__empty" data-empty>
           <div class="pane__empty-title">中栏 · 提取文本</div>
-          <div class="pane__empty-desc">拖入 PDF 后，这里展示按页提取的文本，可选中复制（后续 Step 支持"追问"）。</div>
+          <div class="pane__empty-desc">拖入 PDF 后，这里展示按页提取的文本，可选中复制，或选中文段后点击“追问”。</div>
         </div>
         <div class="pane__scroll pane__scroll--text" id="text-scroll" hidden>
           <!-- extractText 拼好的内容临时渲染到这里（Step 5 再做正式 textPane） -->
@@ -81,7 +83,7 @@
     </div>
 
     <!-- 全局状态条：显示 loading / 错误 -->
-    <div class="status-bar" id="status-bar" hidden>
+    <div class="status-bar" id="status-bar" role="status" aria-live="polite" aria-atomic="true" hidden>
       <span class="status-bar__text" id="status-text"></span>
     </div>
 

@@ -1,0 +1,2 @@
+# Reliability audit
+Inspect all application layers and fix confirmed defects. Preserve the single HTML architecture. Acceptance: build and regression tests pass; fixes and remaining limits documented. User authorizes autonomous planning and execution.

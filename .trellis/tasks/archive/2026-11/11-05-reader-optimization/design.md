@@ -1,0 +1,2 @@
+# Design
+Keep native ESM. Bound PDF canvas memory and rendering concurrency; improve keyboard dialogs and file entry; preserve Markdown code and scroll position; support keyless local AI endpoints. No framework rewrite.

@@ -10,12 +10,12 @@
  *   chat 同样流式，且：
  *     ① 流式开始前把 userText 入 store.messages
  *     ② 流式结束后把 assistant 全文入 store.messages
- * - 未配置 reading.apiKey 或未加载论文 → 抛带语义的 Error（由 UI 捕获提示）
+ * - Validate the model endpoint and paper before each request.
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
 import { createProvider } from './openai.js';
-import { assemble, SUMMARIZE_THRESHOLD, getLastRetrievedIndices } from './context.js';
+import { planContext, SUMMARIZE_THRESHOLD, countMessagesTokens, trimToTokenBudget } from './context.js';
 import { SUMMARIZE_CONVERSATION } from './prompts.js';
 
 /**
@@ -47,11 +47,6 @@ function makeProvider(opts) {
   const { settings, paper } = getState();
   const { reading } = settings;
 
-  if (!reading?.apiKey || !reading.apiKey.trim()) {
-    throw new Error(
-      '未配置文本阅读模型的 API Key。请点击右上角"设置"按钮，在"文本阅读模型"区域填写 Base URL 与 API Key 后重试。',
-    );
-  }
   if (!reading?.baseUrl || !reading.baseUrl.trim()) {
     throw new Error('未配置文本阅读模型的 Base URL，请在设置面板的"文本阅读模型"区域填写。');
   }
@@ -85,8 +80,10 @@ function makeProvider(opts) {
 async function* runOneShot(task, signal) {
   const { paper } = getState();
   const provider = makeProvider({ requirePaper: true });
-  const messages = assemble({ task, paper, messages: [], templates: getPromptTemplates() });
-  yield* provider.chat(messages, { signal });
+  const plan = planRequest({ task, paper, messages: [], templates: getPromptTemplates() });
+  setState({ contextEvidence: plan.evidence });
+  updateChatStatus(plan.stats, task);
+  yield* provider.chat(plan.messages, { signal });
 }
 
 /**
@@ -136,6 +133,7 @@ export function translate(signal) {
  * @returns {AsyncIterable<string>}
  */
 export async function* chat(userText, signal) {
+  signal?.throwIfAborted();
   const text = String(userText || '').trim();
   if (!text) {
     throw new Error('对话内容为空。');
@@ -149,52 +147,73 @@ export async function* chat(userText, signal) {
     ...messages,
     { role: /** @type {const} */ ('user'), content: text },
   ];
-  setState({ messages: messagesWithUser });
-
   const provider = makeProvider({ requirePaper: true });
-  const assembled = assemble({
+  const plan = planRequest({
     task: 'chat',
     paper,
     messages: messagesWithUser,
     templates: getPromptTemplates(),
     conversationSummary: conversationSummary?.text || null,
+    summarizedUpTo: conversationSummary?.summarizedUpTo || 0,
+    pendingSummary: conversationSummary?.pending,
     retrievedChunkIndices,
   });
 
-  // 累积模式：保存本轮检索选中的段落索引，供下一轮加分使用
-  const newRetrievedIndices = getLastRetrievedIndices();
-  if (newRetrievedIndices.length > 0) {
-    // 合并去重：将新旧索引合并（不覆盖 store，在 setState 中原子更新）
-    const merged = [...new Set([...retrievedChunkIndices, ...newRetrievedIndices])];
-    setState({ retrievedChunkIndices: merged });
-  }
+  setState({ messages: messagesWithUser });
+
+  setState({ retrievedChunkIndices: plan.retrievedIndices, contextEvidence: plan.evidence });
+  updateChatStatus(plan.stats, 'chat');
 
   let assistantText = '';
+  const messageId = crypto.randomUUID();
+  let ownedMessages = messagesWithUser;
+  let lastPublished = 0;
+  let completed = false;
+  let failure = null;
   try {
-    for await (const chunk of provider.chat(assembled, { signal })) {
+    for await (const chunk of provider.chat(plan.messages, { signal })) {
+      signal?.throwIfAborted();
+      if (getState().paper !== paper || getState().messages !== ownedMessages) return;
       assistantText += chunk;
+      if (Date.now() - lastPublished >= 100) {
+        ownedMessages = [...messagesWithUser, { role: 'assistant', content: assistantText, status: 'generating', id: messageId }];
+        setState({ messages: ownedMessages });
+        lastPublished = Date.now();
+      }
       yield chunk;
     }
-  } catch (err) {
-    // 流式中断/出错：不把残缺 assistant 文本入 store，让 UI 自行重试
-    throw err;
+    signal?.throwIfAborted();
+    completed = true;
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    // Remove failed turns so a retry does not duplicate the question.
+    if (!completed && getState().paper === paper && getState().messages === ownedMessages) {
+      const partial = assistantText ? { role: 'assistant', content: assistantText,
+        status: signal?.aborted || !failure || failure.name === 'AbortError' ? 'interrupted' : 'failed', id: messageId } : null;
+      setState({ messages: partial ? [...messagesWithUser, partial] : messages, retrievedChunkIndices });
+    }
   }
+
+  if (getState().paper !== paper || getState().messages !== ownedMessages) return;
 
   // 成功结束：把完整 assistant 回复入 store
   if (assistantText) {
-    const latest = getState().messages;
+    const latest = messagesWithUser;
     setState({
       messages: [
         ...latest,
-        { role: /** @type {const} */ ('assistant'), content: assistantText },
+        { role: /** @type {const} */ ('assistant'), content: assistantText, status: 'complete', id: messageId },
       ],
     });
 
     // 对话溢出时触发摘要压缩（阻塞等待，保证下次发送时摘要已就绪）
-    await maybeSummarize();
+    const compressionNote = await maybeSummarize(signal);
+    if (getState().paper !== paper || signal?.aborted) return;
 
     // 更新状态栏指示
-    updateChatStatus();
+    updateChatStatus(plan.stats, 'chat', compressionNote);
   }
 }
 
@@ -202,92 +221,74 @@ export async function* chat(userText, signal) {
 // 对话摘要压缩
 // =========================================================
 
-/**
- * 将消息列表格式化为可读文本，供摘要 LLM 使用。
- * @param {Array<{ role: string, content: string }>} msgs
- * @returns {string}
- */
-function formatMessagesForSummary(msgs) {
-  return msgs
-    .map((m) => {
-      const label = m.role === 'user' ? '🧑 用户' : '🤖 AI';
-      return `### ${label}\n${(m.content || '').trim()}`;
-    })
-    .join('\n\n');
-}
+/** Compress one bounded history fragment and commit its cursor after success. */
+async function maybeSummarize(signal) {
+  const { paper, messages, conversationSummary } = getState();
+  const overflowEnd = Math.max(0, messages.length - SUMMARIZE_THRESHOLD);
+  const prevUpTo = Math.max(0, Math.min(messages.length, Math.floor(conversationSummary?.summarizedUpTo || 0)));
+  if (overflowEnd <= prevUpTo) return '';
 
-/**
- * 检查并触发对话摘要压缩。
- * 当 store.messages 超过 SUMMARIZE_THRESHOLD 时，对溢出消息生成摘要，
- * 合并已有摘要后存入 store.conversationSummary。
- *
- * 增量模式：只压缩"上次已压缩位置"之后的新溢出消息，避免重复发送。
- * 摘要生成失败不抛错——下次发送时退化为无摘要模式（旧消息被滑窗丢弃）。
- *
- * @returns {Promise<void>}
- */
-async function maybeSummarize() {
-  const { messages, conversationSummary } = getState();
-
-  if (messages.length <= SUMMARIZE_THRESHOLD) return;
-
-  // 已压缩到的位置（无摘要时为 0）
-  const prevUpTo = conversationSummary?.summarizedUpTo ?? 0;
-  // 当前应压缩到的最远位置：总消息数 - 阈值（保证窗口内保留 SUMMARIZE_THRESHOLD 条完整消息）
-  const overflowEnd = messages.length - SUMMARIZE_THRESHOLD;
-
-  // 没有新增溢出消息，无需压缩
-  if (overflowEnd <= prevUpTo) return;
-
-  const newOverflow = messages.slice(prevUpTo, overflowEnd);
-  if (newOverflow.length === 0) return;
-
-  const prevSummary = conversationSummary?.text || '';
-  const summaryPrompt = prevSummary
-    ? `已有对话摘要：\n${prevSummary}\n\n请将以下新增对话合并到摘要中，输出一份完整的更新摘要：\n\n${formatMessagesForSummary(newOverflow)}`
-    : `请为以下对话生成摘要：\n\n${formatMessagesForSummary(newOverflow)}`;
+  // Compress a bounded fragment so one long message cannot block later turns.
+  const budget = Math.min(8000, Math.floor(getBudgetTokens() * 0.9));
+  const previous = trimToTokenBudget(conversationSummary?.text || '', 1200);
+  let index = prevUpTo;
+  let offset = conversationSummary?.pending?.messageIndex === index ? conversationSummary.pending.offset : 0;
+  while (index < overflowEnd && messages[index].role === 'assistant' && messages[index].status && messages[index].status !== 'complete') {
+    index++; offset = 0;
+  }
+  if (index >= overflowEnd) return '';
+  const buildMessages = (fragment) => [
+    { role: 'system', content: SUMMARIZE_CONVERSATION },
+    { role: 'user', content: `已有摘要：\n${previous}\n合并新增的 ${messages[index].role} 消息片段（第 ${index} 条，从字符 ${offset} 开始）：\n${fragment}` },
+  ];
+  const allowance = budget - countMessagesTokens(buildMessages('')) - 4;
+  const fragment = trimToTokenBudget(messages[index].content.slice(offset), Math.max(0, allowance));
+  if (!fragment) return '摘要暂缓：提示词超过压缩预算';
+  const nextOffset = offset + fragment.length;
+  const finishedMessage = nextOffset >= messages[index].content.length;
+  const end = finishedMessage ? index + 1 : index;
+  const pending = { messageIndex: end, offset: finishedMessage ? 0 : nextOffset };
 
   try {
     const provider = makeProvider({ requirePaper: false });
-    const newSummary = await provider.chatOnce(
-      [
-        { role: 'system', content: SUMMARIZE_CONVERSATION },
-        { role: 'user', content: summaryPrompt },
-      ],
-      { stream: false },
-    );
-
-    const trimmed = (newSummary || '').trim();
-    if (trimmed) {
-      setState({
-        conversationSummary: {
-          text: trimmed,
-          summarizedUpTo: overflowEnd,
-        },
-      });
+    const result = await provider.chatOnce(buildMessages(fragment), { stream: false, signal });
+    const text = trimToTokenBudget(result.trim(), 1200);
+    if (text && !signal?.aborted && getState().paper === paper && getState().messages === messages) {
+      setState({ conversationSummary: { text, summarizedUpTo: end, pending } });
     }
+    return end < overflowEnd ? '摘要分批处理中' : '';
   } catch (err) {
-    // 非致命：摘要失败时下次发送退化为普通滑窗（旧消息被丢弃）
-    console.warn('[Summarize] 对话摘要生成失败，下次将退化为无摘要模式：', err);
+    console.warn('[Summarize] Conversation compression failed:', err);
+    return '摘要失败：本轮仅使用预算内历史';
   }
 }
 
-/**
- * 更新 chatStatus 状态栏文本，供 UI 展示三层上下文管理状态。
- */
-function updateChatStatus() {
-  const { retrievedChunkIndices, conversationSummary } = getState();
-  const parts = [];
-
-  if (retrievedChunkIndices.length > 0) {
-    parts.push(`检索: ${retrievedChunkIndices.length} 段论文已加载`);
-  }
-
-  if (conversationSummary && conversationSummary.summarizedUpTo > 0) {
-    parts.push(`摘要: ${conversationSummary.summarizedUpTo} 条消息已压缩`);
-  }
-
-  setState({
-    chatStatus: parts.length > 0 ? { text: parts.join(' | ') } : null,
-  });
+/** Return the configured estimated input limit for text requests. */
+function getBudgetTokens() {
+  return getState().settings.reading.contextTokens ?? 24000;
 }
+
+/** Plan a request before mutating history, and report admission errors. */
+function planRequest(args) {
+  try {
+    return planContext({ ...args, budgetTokens: getBudgetTokens() });
+  } catch (err) {
+    setState({ chatStatus: { text: `上下文未发送：${err.message}` } });
+    throw err;
+  }
+}
+
+/** Show coverage of the actual request, rather than accumulated retrievals. */
+function updateChatStatus(stats, task, note = '') {
+  const labels = { chat: '对话', summarize: '总结', explainConcepts: '概念', critique: '质疑', translate: '翻译' };
+  const parts = [
+    `${labels[task]}：估算 ${stats.estimatedTokens}/${stats.budgetTokens} tokens`,
+    `论文 ${stats.paperChunks}/${stats.totalPaperChunks} 段`,
+    `发送 ${stats.historyMessages} 条对话`,
+  ];
+  if (stats.omittedMessages) parts.push(`省略 ${stats.omittedMessages} 条原始历史`);
+  if (note) parts.push(note);
+  setState({ chatStatus: { text: parts.join(' | ') } });
+}
+
+export { estimateSegmented, prepareSegmented, runSegmented } from './segmented.js';

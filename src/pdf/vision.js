@@ -8,7 +8,7 @@
  * 从 settings.recognition 读取文本识别模型配置。
  * ========================================================= */
 
-import { pdfjsLib } from './extract.js';
+import { pdfjsLib, pdfWorker } from './extract.js';
 import { createProvider, buildVisionMessage } from '../ai/openai.js';
 import { getState } from '../state/store.js';
 
@@ -65,6 +65,8 @@ async function renderPageToImage(page, scale = 2.0) {
  * @param {{
  *   signal?: AbortSignal,
  *   onProgress?: (current: number, total: number) => void,
+ *   previousResult?: { fingerprint: string, pages: Array<{pageNum:number,text:string,error?:string}> },
+ *   retryFailedOnly?: boolean,
  * }} [opts]
  * @returns {Promise<{
  *   meta: { title?: string, authors?: string[], nPages: number },
@@ -79,9 +81,6 @@ export async function extractWithVision(file, opts) {
   // 校验 settings —— 从 recognition 配置组取值
   const { settings } = getState();
   const { recognition } = settings;
-  if (!recognition?.apiKey?.trim()) {
-    throw new Error('请先在设置中配置文本识别模型的 API Key');
-  }
   if (!recognition?.baseUrl?.trim()) {
     throw new Error('请先在设置中配置文本识别模型的 Base URL');
   }
@@ -102,67 +101,60 @@ export async function extractWithVision(file, opts) {
     temperature: 0, // OCR 任务始终用 0 温度保证一致性
   });
 
-  // ---- Phase 1: 获取 PDF 文档 ----
+  signal?.throwIfAborted();
   const buf = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: buf });
-  const pdf = await loadingTask.promise;
-
-  const meta = { nPages: pdf.numPages };
+  signal?.throwIfAborted();
+  const loadingTask = pdfjsLib.getDocument({ data: buf, worker: pdfWorker });
+  const abort = () => { void loadingTask.destroy().catch(() => {}); };
+  signal?.addEventListener('abort', abort, { once: true });
   try {
-    const m = await pdf.getMetadata();
-    const info = m?.info || {};
-    if (typeof info.Title === 'string' && info.Title.trim()) {
-      meta.title = info.Title.trim();
+    const pdf = await loadingTask.promise;
+    signal?.throwIfAborted();
+    const fingerprint = pdf.fingerprints?.[0] || '';
+    const previous = opts?.previousResult;
+    const reuse = opts?.retryFailedOnly && previous && fingerprint && previous.fingerprint === fingerprint;
+    const previousPages = new Map(reuse ? previous.pages.map((page) => [page.pageNum, page]) : []);
+    const pages = [];
+    const total = pdf.numPages;
+    for (let i = 1; i <= total; i++) {
+      signal?.throwIfAborted();
+      const cached = previousPages.get(i);
+      if (cached?.text?.trim() && !cached.error) { pages.push({ ...cached }); continue; }
+      onProgress?.(i, total);
+      let page;
+      try {
+        page = await pdf.getPage(i);
+        const dataUrl = await renderPageToImage(page, 2);
+        signal?.throwIfAborted();
+        const text = await provider.chatOnce([buildVisionMessage(VISION_PROMPT, dataUrl)], { signal, stream: false });
+        if (!text.trim()) throw new Error('本页未返回文本。');
+        pages.push({ pageNum: i, text: text.trim() });
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error.name === 'AbortError') throw error;
+        // Authentication and endpoint failures apply to every page. Stop once.
+        if ([400, 401, 403, 404, 429].includes(error.status) ||
+            /HTTP (400|401|403|404|429)|模型不存在|API Key 无效|接口路径不存在/.test(error.message)) {
+          const remaining = Array.from({ length: total - i + 1 }, (_, offset) => ({
+            ...(previousPages.get(i + offset)?.text?.trim() && !previousPages.get(i + offset).error
+              ? previousPages.get(i + offset)
+              : { pageNum: i + offset, text: '', error: '识别因服务设置或配额错误而停止。' }) }));
+          error.partialResult = { meta: { nPages: total }, fingerprint, pages: [...pages, ...remaining],
+            fullText: pages.map((entry) => entry.text).join('\n\n') };
+          throw error;
+        }
+        console.warn('[vision] Page recognition failed', i, error);
+        pages.push({ pageNum: i, text: '', error: error.message });
+      } finally { page?.cleanup(); }
     }
-    if (typeof info.Author === 'string' && info.Author.trim()) {
-      meta.authors = [info.Author.trim()];
-    }
-  } catch {
-    /* ignore */
+    return { meta: { nPages: total }, fingerprint, pages,
+      fullText: pages.filter((page) => !page.error).map((page) => page.text).join('\n\n'),
+      failedPages: pages.filter((page) => page.error || !page.text.trim()).map((page) => page.pageNum) };
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+    await loadingTask.destroy();
   }
-
-  // ---- Phase 2: 逐页渲染 + 识别 ----
-  /** @type {Array<{ pageNum: number, text: string, error?: string }>} */
-  const pages = [];
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    // 检查取消
-    if (signal?.aborted) {
-      try { await pdf.destroy(); } catch { /* ignore */ }
-      throw new DOMException('用户取消', 'AbortError');
-    }
-
-    onProgress?.(i, pdf.numPages);
-
-    let page;
-    try {
-      page = await pdf.getPage(i);
-      const dataUrl = await renderPageToImage(page, 2.0);
-      const msg = buildVisionMessage(VISION_PROMPT, dataUrl);
-      const text = await provider.chatOnce([msg], { signal, stream: false });
-      pages.push({ pageNum: i, text: text.trim() });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        try { await pdf.destroy(); } catch { /* ignore */ }
-        throw err;
-      }
-      console.error(`[vision] 第 ${i} 页识别失败：`, err);
-      pages.push({
-        pageNum: i,
-        text: '',
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      page?.cleanup();
-    }
-  }
-
-  try { await pdf.destroy(); } catch { /* ignore */ }
-
-  const fullText = pages
-    .map((p) => (p.text ? p.text : `[第 ${p.pageNum} 页识别失败]`))
-    .filter(Boolean)
-    .join('\n\n');
-
-  return { meta, fullText, pages };
 }

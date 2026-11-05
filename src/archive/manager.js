@@ -10,8 +10,9 @@
  * ========================================================= */
 
 import { getState, setState } from '../state/store.js';
-import { getSavedResults, setSavedResults, refreshAfterRestore } from '../ui/aiPane.js';
+import { getSavedResults, setSavedResults, getSavedResultStatuses, setSavedResultStatuses, refreshAfterRestore } from '../ui/aiPane.js';
 import * as db from './db.js';
+import { parseArchive } from './schema.js';
 
 /**
  * @typedef {{
@@ -31,8 +32,9 @@ import * as db from './db.js';
 export function hasContent() {
   const sr = getSavedResults();
   const hasAnalysis = Object.values(sr).some((v) => typeof v === 'string' && v.trim());
-  const hasMessages = getState().messages.length > 0;
-  return hasAnalysis || hasMessages;
+  const state = getState();
+  const hasMessages = state.messages.length > 0;
+  return hasAnalysis || hasMessages || Boolean(state.paper?.fullText) || Boolean(state.segmentedTask);
 }
 
 /**
@@ -41,23 +43,7 @@ export function hasContent() {
  * @returns {Promise<ArchiveRecord>}
  */
 export async function archiveCurrent() {
-  const { paper, messages } = getState();
-  const meta = paper?.meta || {};
-  const title = (meta.title || paper?.name || '未命名论文').trim().slice(0, 200);
-
-  /** @type {Omit<ArchiveRecord, 'id'>} */
-  const record = {
-    title,
-    paperMeta: {
-      name: paper?.name || '',
-      title: meta.title || undefined,
-      authors: meta.authors || undefined,
-      nPages: meta.nPages || 0,
-    },
-    savedResults: getSavedResults(),
-    messages: [...messages],
-    createdAt: new Date().toISOString(),
-  };
+  const record = createSnapshot();
 
   const id = await db.saveArchive(record);
   return { ...record, id };
@@ -68,27 +54,18 @@ export async function archiveCurrent() {
  * @param {ArchiveRecord} record
  */
 export function restoreArchive(record) {
-  // 恢复论文元信息（不含 fullText/pages——PDF 不可恢复）
+  const snapshot = parseArchive(record);
+  const interrupted = (status) => status === 'generating' ? 'interrupted' : status;
+  if (snapshot.segmentedTask?.status === 'generating') snapshot.segmentedTask.status = 'interrupted';
   setState({
-    paper: {
-      name: record.paperMeta.name || '',
-      meta: {
-        title: record.paperMeta.title,
-        authors: record.paperMeta.authors,
-        nPages: record.paperMeta.nPages || 0,
-      },
-      fullText: '',
-      pages: [],
-    },
-    messages: record.messages || [],
-    // 存档恢复：清空检索索引与摘要（论文全文不可恢复，旧索引无意义）
-    conversationSummary: null,
-    retrievedChunkIndices: [],
-    chatStatus: null,
+    paper: snapshot.paper,
+    messages: snapshot.messages.map((message) => ({ ...message, ...(message.status ? { status: interrupted(message.status) } : {}) })),
+    conversationSummary: snapshot.conversationSummary,
+    retrievedChunkIndices: [], contextEvidence: [], chatStatus: null,
+    segmentedTask: snapshot.segmentedTask,
   });
-
-  // 恢复分析结果
-  setSavedResults(record.savedResults || {});
+  setSavedResults(snapshot.savedResults);
+  setSavedResultStatuses(Object.fromEntries(Object.entries(snapshot.resultStatuses).map(([key, status]) => [key, interrupted(status)])));
 
   // 刷新 UI
   refreshAfterRestore();
@@ -129,23 +106,7 @@ export function importArchive(file) {
         const raw = /** @type {string} */ (reader.result);
         const data = JSON.parse(raw);
 
-        // 基本 schema 校验
-        if (!data || typeof data !== 'object') {
-          throw new Error('文件格式不正确：不是有效的 JSON 对象。');
-        }
-        if (!data.title && !data.paperMeta) {
-          throw new Error('文件格式不正确：缺少 title 或 paperMeta 字段。');
-        }
-
-        // 构建记录（兼容旧格式）
-        /** @type {Omit<ArchiveRecord, 'id'>} */
-        const record = {
-          title: data.title || data.paperMeta?.title || '导入的存档',
-          paperMeta: data.paperMeta || { name: '', nPages: 0 },
-          savedResults: data.savedResults || {},
-          messages: data.messages || [],
-          createdAt: data.createdAt || new Date().toISOString(),
-        };
+        const record = parseArchive(data);
 
         const id = await db.saveArchive(record);
         resolve({ ...record, id });
@@ -156,4 +117,20 @@ export function importArchive(file) {
     reader.onerror = () => reject(new Error('读取文件失败。'));
     reader.readAsText(file);
   });
+}
+
+/** Capture a detached snapshot so later state changes cannot alter a write. */
+export function createSnapshot() {
+  const state = getState();
+  const paper = state.paper;
+  return parseArchive(structuredClone({
+    schemaVersion: 2,
+    title: (paper?.meta?.title || paper?.name || '未命名论文').trim().slice(0, 200),
+    paper: paper ?? { name: '', meta: { nPages: 0 }, fullText: '', pages: [] },
+    savedResults: getSavedResults(), resultStatuses: getSavedResultStatuses(),
+    messages: state.messages,
+    conversationSummary: state.conversationSummary,
+    segmentedTask: state.segmentedTask ?? null,
+    createdAt: new Date().toISOString(),
+  }));
 }

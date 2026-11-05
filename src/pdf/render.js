@@ -1,28 +1,13 @@
-/* =========================================================
- * src/pdf/render.js
+/**
+ * Render PDF pages on demand with bounded raster memory.
  *
- * PDF 原版渲染（左栏）：把 PDF 页面逐页 canvas 渲染到容器中，支持滚动浏览。
- * 复用 extract.js 配置好的 pdfjsLib 实例（含 worker 配置）。
- *
- * 渲染策略：
- * - 先为每一页占位（避免布局抖动）。
- * - IntersectionObserver 监测可见性 + rootMargin 提前量，按需渲染。
- * - 单页幂等：renderedZoom 记录每页上次渲染时的 userZoom，zoom 不匹配才重渲染。
- *
- * 缩放（Ctrl/Cmd + 滚轮，仅作用于 PDF 栏）：
- * - 以「适应栏宽」为 1× 基准，按 userZoom 重渲染并显式设定 canvas 显示宽度
- *   （行内 maxWidth:none 解除 CSS max-width:100% 上限，放大可出滚动条）。
- * - wheel 监听绑在 container 上、{ passive:false }，preventDefault 阻止浏览器整页缩放。
- * - 非 Ctrl 滚轮放行，保留普通滚动行为与可访问性（C4）。
- * - 向光标处缩放：重渲染前记录光标在锚定页内的纵向比例与视口 y，
- *   重渲染可见页后用真实 getBoundingClientRect 重算 scrollTop（§3.3）。
- * - 非可见页不即时重渲染（保留旧 canvas → 高度不变 → 上方位移稳定 → 锚点准），
- *   滚动进入视口时由 IO 按当前 userZoom 补渲染。
- *
- * 返回 cleanup() 供 main.js 在切换文件时释放资源；setZoom/getZoom 供外部 UI/测试用。
- * ========================================================= */
+ * A two-job queue prevents duplicate page renders. Keep up to eight cached
+ * pages plus visible pages. Each raster uses at most four million pixels.
+ * Zoom and pane width changes invalidate render keys. Private canvases keep
+ * stale jobs from replacing the current page view.
+ */
 
-import { pdfjsLib } from './extract.js';
+import { pdfjsLib, pdfWorker } from './extract.js';
 
 // ---- 缩放相关常量 ----
 /** .pane__scroll 左右 padding（与 styles.css 中 .pane--pdf .pane__scroll{padding:16px} 对齐） */
@@ -44,16 +29,21 @@ const VISIBLE_MARGIN_PX = 400;
  * 渲染 PDF 到容器（左栏）
  * @param {File} file
  * @param {HTMLElement} container 滚动容器（canvas 会被插入这里）
+ * @param {() => boolean} [isCurrent] Return false after a newer load starts.
  * @returns {Promise<{ totalPages: number, cleanup: () => void, setZoom: (z:number) => void, getZoom: () => number }>}
  */
-export async function renderPdf(file, container) {
+export async function renderPdf(file, container, isCurrent = () => true) {
   // 清空旧内容（main.js 在调用前应已调用上一个 cleanup，这里再保险一次）
   container.innerHTML = '';
 
   // File.arrayBuffer() 返回新 buffer，与 extractText 互不影响
   const buf = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: buf });
+  const loadingTask = pdfjsLib.getDocument({ data: buf, worker: pdfWorker });
   const pdf = await loadingTask.promise;
+  if (!isCurrent()) {
+    await pdf.destroy();
+    throw new DOMException('Document changed', 'AbortError');
+  }
   const total = pdf.numPages;
 
   // ---- 为每页占位 ----
@@ -70,67 +60,138 @@ export async function renderPdf(file, container) {
     holders.push(holder);
   }
 
-  // ---- 缩放状态 ----
-  /** 用户缩放倍率（1.0 = 适应栏宽，等价现状默认体验） */
-  let userZoom = 1.0;
-  /** pageNum -> 上次渲染该页时使用的 userZoom；zoom 不匹配才需重渲染 */
-  const renderedZoom = new Map();
+  let userZoom = 1;
+  let destroyed = false;
+  // Keep at most two raster jobs active. Queue entries refer to page holders.
+  const queue = new Set();
+  const active = new Map();
+  const visible = new Set();
+  const renderedKeys = new Map();
+  let running = 0;
+  const idleWaiters = [];
+  const maxPixels = 4_000_000;
+  const maxCachedPages = 8;
+  const cacheOrder = new Set();
+  let contentWidth = Math.max(1, container.clientWidth - 2 * PAD_PX);
+  const key = () => `${userZoom}:${contentWidth}:${window.devicePixelRatio || 1}`;
 
-  // ---- 单页渲染（幂等：zoom 不变则跳过）----
-  const renderPageInto = async (/** @type {HTMLDivElement} */ holder) => {
-    const num = Number(holder.dataset.pageNum);
-    // 捕获本次渲染目标 zoom：await 期间 userZoom 可能再变
-    const zoom = userZoom;
-    if (renderedZoom.get(num) === zoom) return;
-    try {
-      const page = await pdf.getPage(num);
-      // getPage 期间 zoom 可能已变；若已变则放弃本次（让调用方按新 zoom 再来）
-      if (userZoom !== zoom) return;
-      // 倍率模型（§3.1）：以「适应栏宽」为 1× 基准
-      const baseVp = page.getViewport({ scale: 1 });
-      const contentW = Math.max(1, container.clientWidth - 2 * PAD_PX);
-      const fitScale = contentW / baseVp.width;
-      const viewport = page.getViewport({ scale: fitScale * zoom });
-      // 清旧 canvas（支持按新 zoom 重渲染）
-      holder.replaceChildren();
-      const canvas = document.createElement('canvas');
-      const w = Math.round(viewport.width);
-      const h = Math.round(viewport.height);
-      canvas.width = w; // 位图宽 = 显示宽（1:1，文字锐利）
-      canvas.height = h;
-      canvas.style.width = w + 'px'; // 显式显示宽
-      canvas.style.maxWidth = 'none'; // 解除 CSS max-width:100% 上限，允许超出栏宽
-      holder.style.minHeight = ''; // 清除占位高度
-      holder.appendChild(canvas);
-      const ctx = /** @type {CanvasRenderingContext2D | null} */ (
-        canvas.getContext('2d')
-      );
-      if (!ctx) throw new Error('Canvas 2D context 不可用');
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      page.cleanup();
-      // 仅当本次渲染目标 zoom 仍是当前 zoom 时才标记完成
-      // （若期间又变，不写入——让后续 applyZoom/IO 按新 zoom 重渲染）
-      if (userZoom === zoom) renderedZoom.set(num, zoom);
-    } catch (err) {
-      // 不吞异常：打印明细便于诊断；单页失败不阻塞其它页
-      console.error('[pdf] 渲染页', num, '失败：', err);
+  /** Release raster memory but keep page geometry for stable scrolling. */
+  function releaseCanvas(holder) {
+    const canvas = holder.querySelector('canvas');
+    if (canvas) {
+      holder.style.minHeight = canvas.style.height;
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas.remove();
     }
-  };
+    renderedKeys.delete(holder);
+    cacheOrder.delete(holder);
+  }
 
-  // ---- 按需渲染：可见（含 400px 提前量）时触发 ----
-  const io = new IntersectionObserver(
-    (entries) => {
-      for (const e of entries) {
-        if (e.isIntersecting) {
-          // 异步渲染，不阻塞观察回调；并发安全由 pdf.js 内部队列保证
-          void renderPageInto(/** @type {HTMLDivElement} */ (e.target));
+  /** Evict old offscreen rasters without removing layout placeholders. */
+  function trimCache() {
+    for (const holder of cacheOrder) {
+      if (cacheOrder.size <= maxCachedPages) break;
+      if (!visible.has(holder)) releaseCanvas(holder);
+    }
+  }
+
+  /** Add or refresh one page job. Repeated observer events share one job. */
+  function requestPage(holder) {
+    if (destroyed || renderedKeys.get(holder) === key()) return;
+    queue.add(holder);
+    pump();
+  }
+
+  function pump() {
+    if (destroyed) return;
+    for (const holder of queue) {
+      if (running >= 2) break;
+      if (active.has(holder)) continue;
+      queue.delete(holder);
+      if (!visible.has(holder) || renderedKeys.get(holder) === key()) continue;
+      running++;
+      active.set(holder, null);
+      void renderPageInto(holder).finally(() => {
+        running--;
+        active.delete(holder);
+        if (!destroyed && visible.has(holder) && renderedKeys.get(holder) !== key()) {
+          // A zoom or width change during this job requires one new render.
+          if (queue.has(holder)) requestPage(holder);
         }
-      }
-    },
-    { root: container, rootMargin: '400px 0px' },
-  );
+        pump();
+        if (running === 0) idleWaiters.splice(0).forEach((resolve) => resolve());
+      });
+    }
+  }
 
-  holders.forEach((h) => io.observe(h));
+  /** Render to a private canvas, then publish only the current geometry. */
+  async function renderPageInto(holder) {
+    const renderKey = key();
+    const zoom = userZoom;
+    const width = contentWidth;
+    let page;
+    let canvas;
+    try {
+      page = await pdf.getPage(Number(holder.dataset.pageNum));
+      if (destroyed || renderKey !== key()) return;
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: width / base.width * zoom });
+      const w = Math.max(1, Math.round(viewport.width));
+      const h = Math.max(1, Math.round(viewport.height));
+      // Bound each raster to 16 MB even on high-density displays.
+      const ratio = Math.min(window.devicePixelRatio || 1, Math.sqrt(maxPixels / (w * h)));
+      canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.floor(w * ratio));
+      canvas.height = Math.max(1, Math.floor(h * ratio));
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      canvas.style.maxWidth = 'none';
+      const canvasContext = canvas.getContext('2d');
+      if (!canvasContext) throw new Error('Canvas 2D context unavailable');
+      const task = page.render({ canvasContext, viewport, transform: [ratio, 0, 0, ratio, 0, 0] });
+      active.set(holder, task);
+      await task.promise;
+      if (destroyed || renderKey !== key() || !visible.has(holder)) return;
+      releaseCanvas(holder);
+      holder.style.minHeight = '';
+      holder.appendChild(canvas);
+      canvas = null;
+      renderedKeys.set(holder, renderKey);
+      cacheOrder.add(holder);
+      trimCache();
+    } catch (err) {
+      if (!destroyed && err?.name !== 'RenderingCancelledException') {
+        console.error('[pdf] Page render failed', holder.dataset.pageNum, err);
+      }
+    } finally {
+      if (canvas) { canvas.width = 0; canvas.height = 0; }
+      page?.cleanup();
+    }
+  }
+
+  const io = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        visible.add(entry.target);
+        requestPage(entry.target);
+      } else {
+        visible.delete(entry.target);
+        queue.delete(entry.target);
+        active.get(entry.target)?.cancel();
+      }
+    }
+    trimCache();
+  }, { root: container, rootMargin: '400px 0px' });
+  holders.forEach((holder) => io.observe(holder));
+
+  const resizeObserver = new ResizeObserver(() => {
+    const nextWidth = Math.max(1, container.clientWidth - 2 * PAD_PX);
+    if (nextWidth === contentWidth) return;
+    contentWidth = nextWidth;
+    for (const holder of visible) requestPage(holder);
+  });
+  resizeObserver.observe(container);
 
   // ---- 可见页判定（用于缩放时只重渲染视口内的页）----
   const isHolderVisible = (/** @type {HTMLDivElement} */ holder) => {
@@ -188,14 +249,13 @@ export async function renderPdf(file, container) {
     userZoom = z;
 
     // 重渲染当前可见页（非可见页保留旧 canvas → 高度不变 → 锚点 offsetTop 稳定）
-    const tasks = [];
     for (const holder of holders) {
-      if (isHolderVisible(holder)) tasks.push(renderPageInto(holder));
+      if (isHolderVisible(holder)) { visible.add(holder); requestPage(holder); }
     }
-    if (tasks.length > 0) await Promise.all(tasks);
+    if (running > 0) await new Promise((resolve) => idleWaiters.push(resolve));
 
     // 锚点重算（重渲染后用真实 getBoundingClientRect 自动吸收上方可见页的高度变化）
-    if (anchoredHolder) {
+    if (!destroyed && anchoredHolder) {
       const canvas = anchoredHolder.querySelector('canvas');
       if (canvas) {
         const newH = canvas.getBoundingClientRect().height;
@@ -268,7 +328,6 @@ export async function renderPdf(file, container) {
   container.addEventListener('wheel', onWheel, { passive: false });
 
   // ---- 清理 ----
-  let destroyed = false;
   const cleanup = () => {
     if (destroyed) return;
     destroyed = true;
@@ -281,8 +340,12 @@ export async function renderPdf(file, container) {
     pendingTarget = null;
     pendingAnchor = null;
     io.disconnect();
+    resizeObserver.disconnect();
+    queue.clear();
+    for (const task of active.values()) task?.cancel();
+    for (const holder of holders) releaseCanvas(holder);
     try {
-      pdf.destroy();
+      void pdf.destroy().catch((err) => console.warn('[pdf] cleanup failed', err));
     } catch {
       /* ignore */
     }

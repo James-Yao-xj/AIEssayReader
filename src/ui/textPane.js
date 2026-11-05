@@ -85,12 +85,26 @@ export function initTextPane() {
 
 // ---- 对外 API ----
 
+/** Clear text and OCR state before a new document load. */
+export function resetTextPane() {
+  cachedPdfJsResult = null;
+  cachedVisionResult = null;
+  visionHandler = null;
+  hideVisionProgress();
+  hideAskBtn();
+  if (toggleTrack) toggleTrack.classList.remove('text-mode-toggle--vision');
+  currentMode = 'pdfjs';
+}
+
+
 /**
  * 注册 AI 视觉识别的回调。main.js 调用。
- * @param {() => Promise<void>} fn
+ * @param {((retryFailedOnly?: boolean) => Promise<void>) | null} fn
  */
 export function setVisionHandler(fn) {
   visionHandler = fn;
+  const retry = scrollEl?.querySelector('.text-mode-retry');
+  if (retry) retry.disabled = !fn || visionRunning;
 }
 
 /**
@@ -123,6 +137,8 @@ export function hideVisionProgress() {
   visionAbort = null;
   if (progressLabel) progressLabel.hidden = true;
   if (cancelLabel) cancelLabel.hidden = true;
+  const retry = scrollEl?.querySelector('.text-mode-retry');
+  if (retry) retry.disabled = !visionHandler;
 }
 
 /**
@@ -134,6 +150,9 @@ export function renderText(result) {
     scrollEl = document.getElementById('text-scroll');
     if (!scrollEl) return;
   }
+  cachedVisionResult = null;
+  hideVisionProgress();
+  if (toggleTrack) toggleTrack.classList.remove('text-mode-toggle--vision');
   cachedPdfJsResult = { meta: result.meta, pages: result.pages || [] };
   currentMode = 'pdfjs';
   renderCurrent();
@@ -153,6 +172,15 @@ export function renderVisionResult(result) {
 }
 
 // ---- 内部渲染 ----
+
+/** Focus a cited text page when its PDF binary is not available. */
+export function focusTextPage(pageNum) {
+  const page = scrollEl?.querySelector(`[data-page-num="${pageNum}"]`);
+  if (!page) return;
+  page.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  page.setAttribute('tabindex', '-1');
+  page.focus({ preventScroll: true });
+}
 
 function renderCurrent() {
   if (!scrollEl) return;
@@ -186,17 +214,25 @@ function renderCurrent() {
 
   // 模式切换开关
   metaDiv.appendChild(buildToggle());
+  const failed = cachedVisionResult?.pages.filter((page) => page.error || !page.text.trim()).length || 0;
+  if (failed) {
+    const retry = el('button', { type: 'button', class: 'text-mode-retry' }, `重试失败页（${failed} 页）`);
+    retry.disabled = !visionHandler || visionRunning;
+    retry.addEventListener('click', () => startVision(true));
+    metaDiv.appendChild(retry);
+  }
   scrollEl.appendChild(metaDiv);
 
   // 分页 — 每页正文走 marked+KaTeX 渲染
   const frag = document.createDocumentFragment();
   for (const p of pages) {
     const bodyEl = el('div', { class: 'text-page__body' });
-    renderMarkdown(bodyEl, p.text || '（无文本）');
+    renderMarkdown(bodyEl, p.text || (p.error ? `识别失败：${p.error}` : '（无文本）'));
     const pageDiv = el('div', { class: 'text-page' },
       el('div', { class: 'text-page__head' }, `第 ${p.pageNum} 页`),
       bodyEl,
     );
+    pageDiv.dataset.pageNum = String(p.pageNum);
     frag.appendChild(pageDiv);
   }
   scrollEl.appendChild(frag);
@@ -211,7 +247,7 @@ function buildToggle() {
   const leftLabel = el('span', { class: 'text-mode-label' }, 'pdf.js');
 
   // 滑动轨道
-  toggleTrack = el('span', { class: 'text-mode-toggle' });
+  toggleTrack = el('button', { type: 'button', class: 'text-mode-toggle', 'aria-label': '切换 PDF 文本与 AI 识别（首次识别会调用配置的模型）' });
   if (currentMode === 'vision') toggleTrack.classList.add('text-mode-toggle--vision');
   toggleThumb = el('span', { class: 'text-mode-toggle__thumb' });
   toggleTrack.appendChild(toggleThumb);
@@ -225,7 +261,7 @@ function buildToggle() {
   progressLabel.hidden = true;
 
   // 取消按钮
-  cancelLabel = el('span', { class: 'text-mode-cancel' });
+  cancelLabel = el('button', { type: 'button', class: 'text-mode-cancel', 'aria-label': '取消识别' });
   cancelLabel.textContent = '✕';
   cancelLabel.hidden = true;
   cancelLabel.addEventListener('click', (e) => {
@@ -241,6 +277,14 @@ function buildToggle() {
   return wrapper;
 }
 
+function startVision(retryFailedOnly) {
+  if (!visionHandler || visionRunning) return;
+  setVisionProgress(0, cachedPdfJsResult?.pages.length || cachedVisionResult?.pages.length || 0);
+  const retry = scrollEl?.querySelector('.text-mode-retry');
+  if (retry) retry.disabled = true;
+  void visionHandler(retryFailedOnly);
+}
+
 function onToggleClick() {
   if (visionRunning) return;
 
@@ -254,7 +298,7 @@ function onToggleClick() {
     } else if (visionHandler) {
       // 首次切换，触发识别
       toggleTrack?.classList.add('text-mode-toggle--vision');
-      visionHandler();
+      startVision(false);
     } else {
       alert('请先在设置中配置 API Key 和支持 vision 的模型。');
     }

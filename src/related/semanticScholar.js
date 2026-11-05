@@ -74,17 +74,19 @@ function normalizePaper(raw) {
  */
 export function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    if (signal) {
-      signal.addEventListener(
-        'abort',
-        () => {
-          clearTimeout(t);
-          reject(new DOMException('Aborted', 'AbortError'));
-        },
-        { once: true },
-      );
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
     }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -107,7 +109,7 @@ async function safeText(res) {
  * @param {{ signal?: AbortSignal, retries?: number }} [opts]
  * @returns {Promise<any>}
  */
-async function fetchJson(path, opts) {
+async function fetchJson(path, opts, baseUrl = S2_BASE) {
   const { signal, retries = 3 } = opts || {};
   const { settings } = getState();
   const key = (settings?.s2ApiKey || '').trim();
@@ -119,7 +121,7 @@ async function fetchJson(path, opts) {
 
     let res;
     try {
-      res = await fetch(`${S2_BASE}${path}`, { headers, signal });
+      res = await fetch(`${baseUrl}${path}`, { headers, signal });
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') throw err;
       throw new Error(
@@ -160,7 +162,7 @@ export function resolveInput(raw) {
   const s = String(raw || '').trim();
 
   // S2 论文链接 → paperId
-  const s2m = s.match(/semanticscholar\.org\/paper\/([0-9a-f]{40})/i);
+  const s2m = s.match(/semanticscholar\.org\/paper\/(?:[^/?#]+\/)?([0-9a-f]{40})/i);
   if (s2m) return { type: 'paperId', value: s2m[1].toLowerCase() };
 
   // 纯 40 位十六进制 paperId
@@ -175,7 +177,7 @@ export function resolveInput(raw) {
 
   // arXiv
   const arxivM = s.match(
-    /(?:arxiv\.org\/abs\/|arxiv:)(\d{4}\.\d{4,5}(?:v\d+)?)/i,
+    /(?:arxiv\.org\/(?:abs|pdf)\/|arxiv:)(\d{4}\.\d{4,5}(?:v\d+)?)/i,
   );
   if (arxivM) return { type: 'arxiv', value: arxivM[1] };
   if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(s)) return { type: 'arxiv', value: s };
@@ -199,10 +201,10 @@ export async function resolvePaper(input, signal) {
       json = await fetchJson(`/paper/${value}?fields=${PAPER_FIELDS}`, { signal });
       break;
     case 'doi':
-      json = await fetchJson(`/paper/DOI:${value}?fields=${PAPER_FIELDS}`, { signal });
+      json = await fetchJson(`/paper/DOI:${encodeURIComponent(value)}?fields=${PAPER_FIELDS}`, { signal });
       break;
     case 'arxiv':
-      json = await fetchJson(`/paper/arXiv:${value}?fields=${PAPER_FIELDS}`, { signal });
+      json = await fetchJson(`/paper/arXiv:${encodeURIComponent(value)}?fields=${PAPER_FIELDS}`, { signal });
       break;
     default: {
       const q = encodeURIComponent(value);
@@ -232,8 +234,9 @@ export async function resolvePaper(input, signal) {
  */
 export async function getRecommendations(paperId, signal) {
   const res = await fetchJson(
-    `/paper/${paperId}/recommendations?fields=${PAPER_FIELDS}&limit=10`,
+    `/papers/forpaper/${encodeURIComponent(paperId)}?fields=${PAPER_FIELDS}&limit=10`,
     { signal },
+    'https://api.semanticscholar.org/recommendations/v1',
   );
   return (res?.recommendedPapers || [])
     .map((p) => normalizePaper(p))

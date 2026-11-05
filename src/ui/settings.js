@@ -1,3 +1,4 @@
+import { activateDialog } from './dialog.js';
 /* =========================================================
  * src/ui/settings.js
  *
@@ -38,6 +39,7 @@ const DEFAULT_TEMPLATES = /** @type {const} */ ({
 
 /** @type {HTMLDivElement | null} */
 let modalEl = null;
+let releaseModal = null;
 /** @type {HTMLFormElement | null} */
 let formEl = null;
 /**
@@ -56,7 +58,7 @@ export function initSettings() {
   modalEl.hidden = true;
   modalEl.innerHTML = `
     <div class="settings-modal__backdrop" data-close></div>
-    <div class="settings-modal__panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="settings-modal__panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
       <div class="settings-modal__header">
         <h2 id="settings-title">设置</h2>
         <button type="button" class="settings-modal__close" data-close aria-label="关闭设置">&times;</button>
@@ -141,8 +143,9 @@ export function initSettings() {
                     <label class="settings-field">
                       <span class="settings-field__label">API Key</span>
                       <input type="password" name="recognition.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-                      <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+                      <span class="settings-field__hint">服务无需密钥时可留空。密钥仅保存在本地浏览器；留空保留已存密钥。</span>
                     </label>
+                    <label class="settings-field"><span><input type="checkbox" name="recognition.clearApiKey" /> 清除已存密钥</span></label>
 
                     <label class="settings-field">
                       <span class="settings-field__label">模型</span>
@@ -169,8 +172,9 @@ export function initSettings() {
                     <label class="settings-field">
                       <span class="settings-field__label">API Key</span>
                       <input type="password" name="reading.apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false" />
-                      <span class="settings-field__hint">仅保存在本地浏览器 localStorage。已配置时本框留空即不修改，绝不在界面回显明文。</span>
+                      <span class="settings-field__hint">服务无需密钥时可留空。密钥仅保存在本地浏览器；留空保留已存密钥。</span>
                     </label>
+                    <label class="settings-field"><span><input type="checkbox" name="reading.clearApiKey" /> 清除已存密钥</span></label>
 
                     <label class="settings-field">
                       <span class="settings-field__label">模型</span>
@@ -181,6 +185,11 @@ export function initSettings() {
                       <span class="settings-field__label">温度</span>
                       <input type="number" name="reading.temperature" min="0" max="2" step="0.1" value="0.3" />
                       <span class="settings-field__hint">0 更确定，1+ 更发散。结构化分析任务建议 0.2~0.4。</span>
+                    </label>
+                    <label class="settings-field">
+                      <span class="settings-field__label">估算输入预算（token）</span>
+                      <input type="number" name="reading.contextTokens" min="2000" max="200000" step="1" value="24000" aria-describedby="reading-context-hint" />
+                      <span class="settings-field__hint" id="reading-context-hint">仅限制输入，不设置回答的输出 token 上限。包含论文、提示词和对话，按文本近似估算，并在预算内预留约 10% 应对估算误差。不会自动检测模型窗口或使用模型精确分词器。请按模型限制手动设置，并为模型输出另外留出空间。</span>
                     </label>
                   </fieldset>
                 </div>
@@ -267,7 +276,7 @@ export function initSettings() {
           </div>
         </div>
 
-        <div class="settings-modal__error" id="settings-error" hidden></div>
+        <div class="settings-modal__error" id="settings-error" role="alert" hidden></div>
 
         <div class="settings-modal__actions">
           <button type="button" data-close>取消</button>
@@ -357,16 +366,7 @@ export function initSettings() {
     void save();
   });
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !modalEl || modalEl.hidden) return;
-    // 抽屉打开时 Esc 只关抽屉，不关整个面板
-    const basic = modalEl.querySelector('.settings-basic');
-    if (basic instanceof HTMLElement && basic.classList.contains('is-drawer-open')) {
-      closeDrawer();
-      return;
-    }
-    closeSettings();
-  });
+
 }
 
 /**
@@ -377,6 +377,7 @@ export function initSettings() {
 export function openSettings() {
   if (!modalEl) initSettings();
   syncFormFromStore();
+  modalEl.querySelectorAll('[name$=".clearApiKey"]').forEach((input) => { input.checked = false; });
   refreshAllPreviews();
   showError('');
   // 重置到第一个 tab
@@ -385,16 +386,19 @@ export function openSettings() {
   closeDrawer();
   renderSummaryCards();
   modalEl.hidden = false;
-  // 卡片态下首字段在抽屉内（屏幕外），改为聚焦第一张卡片的"配置"按钮作为主入口
-  setTimeout(() => {
-    const firstConfig = modalEl?.querySelector('.settings-card__config');
-    if (firstConfig instanceof HTMLElement) firstConfig.focus();
-  }, 0);
+  releaseModal?.();
+  releaseModal = activateDialog(modalEl, () => {
+    const basic = modalEl.querySelector('.settings-basic');
+    if (basic.classList.contains('is-drawer-open')) closeDrawer();
+    else closeSettings();
+  });
 }
 
 /** 关闭设置面板。 */
 export function closeSettings() {
   if (modalEl) modalEl.hidden = true;
+  releaseModal?.();
+  releaseModal = null;
 }
 
 /**
@@ -420,6 +424,7 @@ function syncFormFromStore() {
   setFieldValue('reading.baseUrl', rd.baseUrl || '');
   setFieldValue('reading.model', rd.model || '');
   setFieldValue('reading.temperature', String(rd.temperature ?? 0.3));
+  setFieldValue('reading.contextTokens', String(rd.contextTokens ?? 24000));
   // API Key 永不回显明文
   syncApiKeyField('reading.apiKey', rd.apiKey);
 
@@ -561,14 +566,17 @@ function openDrawer(model) {
   const basic = modalEl.querySelector('.settings-basic');
   if (basic instanceof HTMLElement) basic.classList.add('is-drawer-open');
   const drawer = modalEl.querySelector('.settings-basic__drawer');
-  if (drawer instanceof HTMLElement) drawer.setAttribute('aria-hidden', 'false');
+  if (drawer instanceof HTMLElement) {
+    drawer.setAttribute('aria-hidden', 'false');
+    drawer.inert = false;
+  }
 
   // 聚焦首字段
   setTimeout(() => {
     const firstInput = modalEl?.querySelector(
       `.settings-drawer-group[data-model-fields="${model}"] input`,
     );
-    if (firstInput instanceof HTMLInputElement) firstInput.focus();
+    if (!modalEl.hidden && drawerModel === model && firstInput instanceof HTMLInputElement) firstInput.focus();
   }, 0);
 }
 
@@ -582,7 +590,12 @@ function closeDrawer() {
   const basic = modalEl.querySelector('.settings-basic');
   if (basic instanceof HTMLElement) basic.classList.remove('is-drawer-open');
   const drawer = modalEl.querySelector('.settings-basic__drawer');
-  if (drawer instanceof HTMLElement) drawer.setAttribute('aria-hidden', 'true');
+  if (drawer instanceof HTMLElement) {
+    const hadFocus = drawer.contains(document.activeElement);
+    drawer.setAttribute('aria-hidden', 'true');
+    drawer.inert = true;
+    if (hadFocus) modalEl.querySelector('.settings-card__config')?.focus();
+  }
 }
 
 /**
@@ -651,6 +664,7 @@ async function save() {
   // 收集两组模型配置
   const recCfg = collectModelConfig(fd, 'recognition');
   const readCfg = collectModelConfig(fd, 'reading');
+  const contextTokens = Number(String(fd.get('reading.contextTokens') || '').trim());
 
   // 提示词模板：trim 后保存；纯空白视为"使用内置默认"
   const promptSummarize = String(fd.get('promptSummarize') || '').trim();
@@ -678,6 +692,11 @@ async function save() {
     return;
   }
 
+  if (!Number.isInteger(contextTokens) || contextTokens < 2000 || contextTokens > 200000) {
+    showError('估算输入预算需为 2000~200000 之间的整数。');
+    return;
+  }
+
   // 字体大小范围校验
   if (!Number.isFinite(fontSize) || fontSize < 12 || fontSize > 24 || !Number.isInteger(fontSize)) {
     showError('正文字号需为 12~24 之间的整数。');
@@ -692,17 +711,18 @@ async function save() {
   /** @type {import('../config/defaults.js').ModelConfig} */
   const recognition = {
     baseUrl: recCfg.baseUrl,
-    apiKey: recCfg.apiKey ? recCfg.apiKey : currentRec.apiKey || '',
+    apiKey: fd.has('recognition.clearApiKey') ? '' : recCfg.apiKey ? recCfg.apiKey : currentRec.apiKey || '',
     model: recCfg.model,
     temperature: recCfg.temperature,
   };
 
-  /** @type {import('../config/defaults.js').ModelConfig} */
+  /** @type {import('../config/defaults.js').Settings['reading']} */
   const reading = {
     baseUrl: readCfg.baseUrl,
-    apiKey: readCfg.apiKey ? readCfg.apiKey : currentReading.apiKey || '',
+    apiKey: fd.has('reading.clearApiKey') ? '' : readCfg.apiKey ? readCfg.apiKey : currentReading.apiKey || '',
     model: readCfg.model,
     temperature: readCfg.temperature,
+    contextTokens,
   };
 
   /** @type {import('../config/defaults.js').Settings} */

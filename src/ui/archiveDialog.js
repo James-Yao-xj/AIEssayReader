@@ -8,7 +8,7 @@
  * - 订阅 store 同步按钮禁用态
  * ========================================================= */
 
-import { getState, subscribe } from '../state/store.js';
+import { activateDialog } from './dialog.js';
 import * as db from '../archive/db.js';
 import { hasContent, archiveCurrent, restoreArchive, exportArchive, importArchive } from '../archive/manager.js';
 
@@ -32,19 +32,15 @@ export function initArchiveButton() {
 
   btn.addEventListener('click', () => openArchiveDialog());
 
-  // 订阅 store：无内容时禁用
-  const update = () => {
-    /** @type {HTMLButtonElement} */ (btn).disabled = !hasContent();
-  };
-  subscribe(update);
-  update();
+  // Archive history and import remain available when the session is empty.
+  btn.disabled = false;
 }
 
 // ---- 对话框 ----
 
 let dialogRoot = null;
 /** @type {((e: KeyboardEvent) => void) | null} */
-let dialogEscHandler = null;
+let releaseModal = null;
 
 /**
  * 打开存档管理对话框。
@@ -55,10 +51,10 @@ function openArchiveDialog() {
   const overlay = document.createElement('div');
   overlay.className = 'archive-dialog-overlay';
   overlay.innerHTML = `
-    <div class="archive-dialog">
+    <div class="archive-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-title" tabindex="-1">
       <div class="archive-dialog__header">
-        <h3>存档管理</h3>
-        <button type="button" class="archive-dialog__close" data-action="archive-close">&times;</button>
+        <h3 id="archive-title">存档管理</h3>
+        <button type="button" class="archive-dialog__close" data-action="archive-close" aria-label="关闭存档管理">&times;</button>
       </div>
       <div class="archive-dialog__body">
         <div class="archive-dialog__save-section">
@@ -83,18 +79,17 @@ function openArchiveDialog() {
   dialogRoot = overlay;
 
   bindDialogEvents(overlay);
+  releaseModal = activateDialog(overlay, closeDialog);
   refreshList();
 }
 
 function closeDialog() {
-  if (dialogEscHandler) {
-    document.removeEventListener('keydown', dialogEscHandler);
-    dialogEscHandler = null;
-  }
   if (dialogRoot) {
     dialogRoot.remove();
     dialogRoot = null;
   }
+  releaseModal?.();
+  releaseModal = null;
 }
 
 // ---- 事件绑定 ----
@@ -108,10 +103,7 @@ function bindDialogEvents(overlay) {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) closeDialog();
   });
-  dialogEscHandler = (e) => {
-    if (e.key === 'Escape') closeDialog();
-  };
-  document.addEventListener('keydown', dialogEscHandler);
+
 
   // 保存当前
   overlay.querySelector('[data-action="archive-save"]')?.addEventListener('click', async () => {
@@ -211,7 +203,7 @@ async function refreshList() {
     }
 
     listEl.innerHTML = archives.map((rec) => {
-      const time = formatTime(rec.createdAt);
+      const time = escapeHtml(formatTime(rec.createdAt));
       const indicators = buildIndicators(rec);
       return `
         <div class="archive-item">
