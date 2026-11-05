@@ -1,0 +1,2 @@
+# Reader optimization
+Improve the existing reader across performance, accessibility, and compatibility. Preserve three panes and single HTML build. Add regression tests. User authorizes autonomous decisions and implementation.
